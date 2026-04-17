@@ -1,5 +1,20 @@
-# .gitignore
+# =========================
+# ENTORNOS VIRTUALES
+# =========================
+venv/
+.venv/
+env/
+
+# =========================
+# CACHÉ DE PYTHON
+# =========================
 __pycache__/
 *.pyc
+*.pyo
+
 data/*.dat
+
+# =========================
 .DS_Store
+Thumbs.db
+.vscode/

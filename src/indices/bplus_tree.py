@@ -223,7 +223,6 @@ class BPlusTreeIndex(BaseIndex):
             print("Creando nueva raíz")
             new_raiz_id=self.siguiente_pagina_libre
             self.siguiente_pagina_libre+=1
-            self._write_metadata()
 
             llaves=[key]
             pointers=[leaft_page_id, right_page_id]
@@ -248,9 +247,7 @@ class BPlusTreeIndex(BaseIndex):
 
             self.buffer.write_page(new_raiz_id, self._pack_internal(llaves, pointers, -1, new_raiz_id))
             
-            raw_meta_data=bytearray(self.PAGE_SIZE)
-            struct.pack_into('<ii', raw_meta_data, 0, self.raiz, self.siguiente_pagina_libre)
-            self.buffer.write_page(0, raw_meta_data)
+            self._write_metadata()
 
             return
         
@@ -365,8 +362,184 @@ class BPlusTreeIndex(BaseIndex):
                     cola.append((ptr, nivel + 1))
         print("--- FIN ÁRBOL ---\n")
 
-    def remove(self, key):
-        pass
+    def _min_leaf_keys(self):
+        # Mínimo de llaves en una hoja: ceil(max_leaf_keys / 2)
+        return (self.max_leaf_keys + 1) // 2
+
+    def _min_internal_pointers(self):
+        # Mínimo de punteros en un interno (no raíz): ceil((m+1) / 2)
+        return (self.m + 2) // 2
+
+    def _set_parent(self, node_id, new_parent_id):
+        # Reescribe un nodo cambiando solo su parent_id (conserva el resto)
+        raw = self.buffer.read_page(node_id)
+        _, is_leaf, _, _, _ = self._read_header_pagina(raw)
+        if is_leaf == 1:
+            k, p, s, _, nl, pid = self._unpack_leaf(raw)
+            raw = self._pack_leaf(k, p, s, new_parent_id, nl, pid)
+        else:
+            k, ptrs, _, pid = self._unpack_internal(raw)
+            raw = self._pack_internal(k, ptrs, new_parent_id, pid)
+        self.buffer.write_page(node_id, raw)
+
+    def remove(self, key) -> dict:
+        time_start = time.time()
+        key = self._normalize_key(key)
+
+        # Localizamos la hoja que debería contener la llave
+        leaf_raw = self.search_leaf(key)
+        keys, _, _, _, _, leaf_id = self._unpack_leaf(leaf_raw)
+
+        if key not in keys:
+            return self._format_result(False, self.buffer.get_io_cost(), time.time() - time_start)
+
+        self._delete_entry(leaf_id, key, pointer=None)
+        return self._format_result(True, self.buffer.get_io_cost(), time.time() - time_start)
+
+    def _delete_entry(self, node_id, key, pointer):
+        raw = self.buffer.read_page(node_id)
+        _, is_leaf, _, parent_id, _ = self._read_header_pagina(raw)
+
+        if is_leaf == 1:
+            ks, ps, ss, _, nl, _ = self._unpack_leaf(raw)
+            i = ks.index(key)
+            ks.pop(i); ps.pop(i); ss.pop(i)
+            raw = self._pack_leaf(ks, ps, ss, parent_id, nl, node_id)
+            num_entries = len(ks)
+        else:
+            ks, ptrs, _, _ = self._unpack_internal(raw)
+            idx_ptr = ptrs.index(pointer)
+            if idx_ptr == 0:
+                ks.pop(0)
+            else:
+                ks.pop(idx_ptr - 1)
+            ptrs.pop(idx_ptr)
+            raw = self._pack_internal(ks, ptrs, parent_id, node_id)
+            num_entries = len(ptrs)
+        self.buffer.write_page(node_id, raw)
+
+        if node_id == self.raiz:
+            if is_leaf == 0 and num_entries == 1:
+                nueva_raiz = ptrs[0]
+                self._set_parent(nueva_raiz, -1)
+                self.raiz = nueva_raiz
+                self._write_metadata()
+            return
+
+        if is_leaf == 1 and num_entries >= self._min_leaf_keys():
+            return
+        if is_leaf == 0 and num_entries >= self._min_internal_pointers():
+            return
+
+        raw_padre = self.buffer.read_page(parent_id)
+        ks_p, ptrs_p, abuelo_id, _ = self._unpack_internal(raw_padre)
+        idx = ptrs_p.index(node_id)
+        izq_id = ptrs_p[idx - 1] if idx > 0 else None
+        der_id = ptrs_p[idx + 1] if idx + 1 < len(ptrs_p) else None
+        minimo = self._min_leaf_keys() if is_leaf == 1 else self._min_internal_pointers()
+
+        if izq_id is not None:
+            raw_izq = self.buffer.read_page(izq_id)
+            if is_leaf == 1:
+                ks_h, ps_h, ss_h, _, nl_h, _ = self._unpack_leaf(raw_izq)
+                puede_prestar = len(ks_h) > minimo
+            else:
+                ks_h, ptrs_h, _, _ = self._unpack_internal(raw_izq)
+                puede_prestar = len(ptrs_h) > minimo
+
+            if puede_prestar:
+                sep_idx = idx - 1
+                if is_leaf == 1:
+                    ks_n, ps_n, ss_n, _, nl_n, _ = self._unpack_leaf(raw)
+                    ks_n.insert(0, ks_h.pop()); ps_n.insert(0, ps_h.pop()); ss_n.insert(0, ss_h.pop())
+                    ks_p[sep_idx] = ks_n[0]
+                    self.buffer.write_page(izq_id, self._pack_leaf(ks_h, ps_h, ss_h, parent_id, nl_h, izq_id))
+                    self.buffer.write_page(node_id, self._pack_leaf(ks_n, ps_n, ss_n, parent_id, nl_n, node_id))
+                else:
+                    ks_n, ptrs_n, _, _ = self._unpack_internal(raw)
+                    ptr_movido = ptrs_h.pop()
+                    llave_subida = ks_h.pop()
+                    ks_n.insert(0, ks_p[sep_idx])
+                    ptrs_n.insert(0, ptr_movido)
+                    self._set_parent(ptr_movido, node_id)
+                    ks_p[sep_idx] = llave_subida
+                    self.buffer.write_page(izq_id, self._pack_internal(ks_h, ptrs_h, parent_id, izq_id))
+                    self.buffer.write_page(node_id, self._pack_internal(ks_n, ptrs_n, parent_id, node_id))
+                self.buffer.write_page(parent_id, self._pack_internal(ks_p, ptrs_p, abuelo_id, parent_id))
+                return
+            
+        if der_id is not None:
+            raw_der = self.buffer.read_page(der_id)
+            if is_leaf == 1:
+                ks_h, ps_h, ss_h, _, nl_h, _ = self._unpack_leaf(raw_der)
+                puede_prestar = len(ks_h) > minimo
+            else:
+                ks_h, ptrs_h, _, _ = self._unpack_internal(raw_der)
+                puede_prestar = len(ptrs_h) > minimo
+
+            if puede_prestar:
+                sep_idx = idx
+                if is_leaf == 1:
+                    ks_n, ps_n, ss_n, _, nl_n, _ = self._unpack_leaf(raw)
+                    ks_n.append(ks_h.pop(0)); ps_n.append(ps_h.pop(0)); ss_n.append(ss_h.pop(0))
+
+                    ks_p[sep_idx] = ks_h[0]
+                    self.buffer.write_page(der_id, self._pack_leaf(ks_h, ps_h, ss_h, parent_id, nl_h, der_id))
+                    self.buffer.write_page(node_id, self._pack_leaf(ks_n, ps_n, ss_n, parent_id, nl_n, node_id))
+                else:
+                    ks_n, ptrs_n, _, _ = self._unpack_internal(raw)
+
+                    ptr_movido = ptrs_h.pop(0)
+                    llave_subida = ks_h.pop(0)
+                    ks_n.append(ks_p[sep_idx])
+                    ptrs_n.append(ptr_movido)
+                    self._set_parent(ptr_movido, node_id)
+                    ks_p[sep_idx] = llave_subida
+                    self.buffer.write_page(der_id, self._pack_internal(ks_h, ptrs_h, parent_id, der_id))
+                    self.buffer.write_page(node_id, self._pack_internal(ks_n, ptrs_n, parent_id, node_id))
+                self.buffer.write_page(parent_id, self._pack_internal(ks_p, ptrs_p, abuelo_id, parent_id))
+                return
+
+        if izq_id is not None:
+            sep_idx = idx - 1
+            K_sep = ks_p[sep_idx]
+            raw_izq = self.buffer.read_page(izq_id)
+            if is_leaf == 1:
+                ks_izq, ps_izq, ss_izq, _, _, _ = self._unpack_leaf(raw_izq)
+                ks_n, ps_n, ss_n, _, nl_n, _ = self._unpack_leaf(raw)
+
+                izq_nuevo = self._pack_leaf(ks_izq + ks_n, ps_izq + ps_n, ss_izq + ss_n,
+                                            parent_id, nl_n, izq_id)
+            else:
+                ks_izq, ptrs_izq, _, _ = self._unpack_internal(raw_izq)
+                ks_n, ptrs_n, _, _ = self._unpack_internal(raw)
+
+                izq_nuevo = self._pack_internal(ks_izq + [K_sep] + ks_n, ptrs_izq + ptrs_n,
+                                                parent_id, izq_id)
+
+                for hijo_id in ptrs_n:
+                    self._set_parent(hijo_id, izq_id)
+            self.buffer.write_page(izq_id, izq_nuevo)
+
+            self._delete_entry(parent_id, K_sep, node_id)
+        else:
+            sep_idx = idx
+            K_sep = ks_p[sep_idx]
+            raw_der = self.buffer.read_page(der_id)
+            if is_leaf == 1:
+                ks_n, ps_n, ss_n, _, _, _ = self._unpack_leaf(raw)
+                ks_d, ps_d, ss_d, _, nl_d, _ = self._unpack_leaf(raw_der)
+                n_nuevo = self._pack_leaf(ks_n + ks_d, ps_n + ps_d, ss_n + ss_d,
+                                          parent_id, nl_d, node_id)
+            else:
+                ks_n, ptrs_n, _, _ = self._unpack_internal(raw)
+                ks_d, ptrs_d, _, _ = self._unpack_internal(raw_der)
+                n_nuevo = self._pack_internal(ks_n + [K_sep] + ks_d, ptrs_n + ptrs_d,
+                                              parent_id, node_id)
+                for hijo_id in ptrs_d:
+                    self._set_parent(hijo_id, node_id)
+            self.buffer.write_page(node_id, n_nuevo)
+            self._delete_entry(parent_id, K_sep, der_id)
 
     def range_search(self, begin_key, end_key):
         pass
@@ -396,7 +569,7 @@ if __name__ == "__main__":
             registros.append((k, p, s))
         return registros
 
-    def _run_test(idx_key, idx_size, records_file, index_name, etiqueta):
+    def _run_test(idx_key, idx_size, records_file, index_name, etiqueta, delete_keys=None):
         print("\n" + "#" * 64)
         print(f"#  PRUEBA {etiqueta}  (archivo: {records_file})")
         print("#" * 64)
@@ -438,5 +611,48 @@ if __name__ == "__main__":
         res = idx.search(clave_inexistente)
         print(f"  search({clave_inexistente!r}) -> {res['data']}  [esperado None]")
 
-    #_run_test("INT", 4, "tests/data/records_int.bin", "idx_test_int", "INT")
-    _run_test("STR", 8, "tests/data/records_str.bin", "idx_test_str", "STR")
+        # ============================================================
+        #  FASE DE ELIMINACIÓN
+        # ============================================================
+        if delete_keys:
+            print("\n" + "=" * 64)
+            print(f"  FASE DE ELIMINACIÓN ({etiqueta})")
+            print("=" * 64)
+
+            for k in delete_keys:
+                print(f"\n>>> remove(key={k!r})")
+                res = idx.remove(k)
+                estado = "BORRADO" if res['data'] else "NO EXISTÍA"
+                print(f"    resultado: {estado}  (io_acum={res['disk_accesses']}, "
+                      f"t={res['execution_time_ms']*1000:.3f} ms)")
+                idx.print_tree()
+
+                # Verificación: buscar la llave debe devolver None tras un borrado exitoso
+                if res['data']:
+                    chk = idx.search(k)
+                    ok = chk['data'] is None
+                    print(f"    search({k!r}) -> {chk['data']}  "
+                          f"[{'OK ' if ok else 'FAIL'} esperado None]")
+
+            print("\n--- VERIFICACIÓN FINAL: las llaves no borradas siguen accesibles ---")
+            registros = _read_records(records_file, idx_key, idx_size)
+            borradas = set()
+            for k in delete_keys:
+                kk = k.encode('utf-8')[:idx_size].ljust(idx_size, b'\x00') if idx_key.upper() == "STR" and isinstance(k, str) else k
+                borradas.add(kk if idx_key.upper() == "STR" else k)
+            for k, p, s in registros:
+                kk = k.encode('utf-8')[:idx_size].ljust(idx_size, b'\x00') if idx_key.upper() == "STR" else k
+                if kk in borradas:
+                    continue
+                res = idx.search(k)
+                esperado = (p, s)
+                ok = res['data'] == esperado
+                estado = "OK " if ok else f"FAIL (esperado {esperado})"
+                print(f"  search({k!r:>10}) -> {res['data']}  [{estado}]")
+
+    # INT: borrar 60 (borrow del derecho), 80 (merge con izq), 50 (sin underflow), 99999 (no existe)
+    _run_test("INT", 4, "tests/data/records_int.bin", "idx_test_int", "INT",
+              delete_keys=[60, 80, 50, 99999])
+    # STR: borrar luz (sin underflow), fin (borrow del der), abc (merge con der), "zzz_no" (no existe)
+    _run_test("STR", 8, "tests/data/records_str.bin", "idx_test_str", "STR",
+              delete_keys=["luz", "fin", "abc", "zzz_no"])

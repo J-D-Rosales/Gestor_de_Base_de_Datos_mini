@@ -1,14 +1,4 @@
 import os
-import sys
-
-# Permite ejecutar este archivo directamente: agrega src/ y src/indices/ al sys.path
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-_PARENT = os.path.dirname(_HERE)
-if _PARENT not in sys.path:
-    sys.path.insert(0, _PARENT)
-
 from base_index import BaseIndex
 import struct
 from buffer_manager import BufferManager
@@ -27,8 +17,6 @@ class BPlusTreeIndex(BaseIndex):
         self.index_name = index_name
         self.idx_key = idx_key
         self.filepath = f"data/{index_name}.bin"
-        # OJO: BufferManager crea el archivo vacío en su __init__, por eso
-        # decidimos si inicializar el árbol mirando el TAMAÑO, no la existencia.
         self.buffer=BufferManager(self.filepath, self.PAGE_SIZE)
 
         if idx_key.upper()=="INT":
@@ -86,7 +74,6 @@ class BPlusTreeIndex(BaseIndex):
             if self.idx_key.upper() == "STR":
                 if isinstance(llave_actual, str):
                     llave_actual = llave_actual.encode('utf-8')
-                # si ya es bytes, lo dejamos: struct '{N}s' aplica padding/truncado
 
             struct.pack_into(formato_fila, buffer, offset, llave_actual, page[i], slot[i])
             offset+=self.key_size+self.RID_SIZE
@@ -141,25 +128,20 @@ class BPlusTreeIndex(BaseIndex):
     
     def search_leaf(self, value) -> bytes:
         current_node=self.buffer.read_page(self.raiz)
-        offset=0
         page_id, is_leaf, num_keys, parent_id, next_leaf=self._read_header_pagina(current_node)
-        offset+=self.HEADER_SIZE
-        
+
         while is_leaf==0:
             keys,pointers, parent_id, page_id=self._unpack_internal(current_node)
             assert len(keys)>0, "Error: Nodo interno sin claves"
 
             for i in range(len(keys)):
-                if value==keys[i]:
-                    current_node=self.buffer.read_page(pointers[i+1])
-                    break
-                elif value<keys[i]:
+                if value<=keys[i]:
                     current_node=self.buffer.read_page(pointers[i])
                     break
                 elif (i+1==len(keys)):
                     current_node=self.buffer.read_page(pointers[i+1])
                     break
-            
+
             page_id, is_leaf, num_keys, parent_id, next_leaf=self._read_header_pagina(current_node)
 
         return current_node
@@ -167,24 +149,27 @@ class BPlusTreeIndex(BaseIndex):
     def search(self, key) -> dict:
         time_start = time.time()
         key = self._normalize_key(key)
-        l=self.search_leaf(key)
-        offset=0
-        page_id, is_leaf, num_keys, parent_id, next_leaf=self._read_header_pagina(l)
-        offset+=self.HEADER_SIZE
+        raw = self.search_leaf(key)
+        results = []
 
-        formato_pares="<"+(f"{self.key_format}ii")*num_keys #llave, page_id, slot_id
-        datos_extraidos=struct.unpack_from(formato_pares,l,offset)
-        keys=datos_extraidos[0::3]
-        page=datos_extraidos[1::3]
-        slot=datos_extraidos[2::3]
+        while True:
+            keys, page, slot, _, next_leaf, _ = self._unpack_leaf(raw)
+            for i in range(len(keys)):
+                if keys[i] == key:
+                    results.append((page[i], slot[i]))
+                elif keys[i] > key:
+                    data = results if results else None
+                    return self._format_result(data, self.buffer.get_io_cost(), time.time() - time_start)
 
-        for i in range(len(keys)):
-            if key==keys[i]:
-                time_end = time.time()
-                return self._format_result((page[i],slot[i]), self.buffer.get_io_cost(), time_end - time_start)
-        
-        time_end = time.time()
-        return self._format_result(None, self.buffer.get_io_cost(), time_end - time_start)
+            if next_leaf == -1:
+                break
+            if not keys or keys[-1] <= key:
+                raw = self.buffer.read_page(next_leaf)
+                continue
+            break
+
+        data = results if results else None
+        return self._format_result(data, self.buffer.get_io_cost(), time.time() - time_start)
 
     def insert_leaf(self, nodo_hoja: bytes, page_id_value: int, slot_id_value: int, value):
 
@@ -304,7 +289,7 @@ class BPlusTreeIndex(BaseIndex):
         if (len(keys)>self.max_leaf_keys):
 
             mid=len(keys)//2
-            
+
             right_keys=keys[mid:]
             right_page=page[mid:]
             right_slot=slot[mid:]
@@ -363,15 +348,12 @@ class BPlusTreeIndex(BaseIndex):
         print("--- FIN ÁRBOL ---\n")
 
     def _min_leaf_keys(self):
-        # Mínimo de llaves en una hoja: ceil(max_leaf_keys / 2)
         return (self.max_leaf_keys + 1) // 2
 
     def _min_internal_pointers(self):
-        # Mínimo de punteros en un interno (no raíz): ceil((m+1) / 2)
         return (self.m + 2) // 2
 
     def _set_parent(self, node_id, new_parent_id):
-        # Reescribe un nodo cambiando solo su parent_id (conserva el resto)
         raw = self.buffer.read_page(node_id)
         _, is_leaf, _, _, _ = self._read_header_pagina(raw)
         if is_leaf == 1:
@@ -386,9 +368,12 @@ class BPlusTreeIndex(BaseIndex):
         time_start = time.time()
         key = self._normalize_key(key)
 
-        # Localizamos la hoja que debería contener la llave
-        leaf_raw = self.search_leaf(key)
-        keys, _, _, _, _, leaf_id = self._unpack_leaf(leaf_raw)
+        raw = self.search_leaf(key)
+        keys, _, _, _, next_leaf, leaf_id = self._unpack_leaf(raw)
+
+        while key not in keys and next_leaf != -1 and (not keys or keys[-1] < key):
+            raw = self.buffer.read_page(next_leaf)
+            keys, _, _, _, next_leaf, leaf_id = self._unpack_leaf(raw)
 
         if key not in keys:
             return self._format_result(False, self.buffer.get_io_cost(), time.time() - time_start)
@@ -541,118 +526,30 @@ class BPlusTreeIndex(BaseIndex):
             self.buffer.write_page(node_id, n_nuevo)
             self._delete_entry(parent_id, K_sep, der_id)
 
-    def range_search(self, begin_key, end_key):
-        pass
+    def range_search(self, begin_key, end_key) -> dict:
+        time_start = time.time()
+        begin_key = self._normalize_key(begin_key)
+        end_key = self._normalize_key(end_key)
 
+        if begin_key > end_key:
+            return self._format_result([], self.buffer.get_io_cost(), time.time() - time_start)
 
-if __name__ == "__main__":
-    PROJECT_ROOT = os.path.dirname(_PARENT)  # raíz del proyecto
-    os.chdir(PROJECT_ROOT)
-    os.makedirs("data", exist_ok=True)
+        raw = self.search_leaf(begin_key)
+        results = []
 
-    def _read_records(path, idx_key, idx_size):
-        if idx_key.upper() == "INT":
-            fmt = '<iii'
-            size = 12
-        else:
-            fmt = f'<{idx_size}sii'
-            size = idx_size + 8
-        registros = []
-        with open(path, 'rb') as f:
-            data = f.read()
-        for i in range(0, len(data), size):
-            if i + size > len(data):
+        while True:
+            keys, page, slot, _, next_leaf, _ = self._unpack_leaf(raw)
+            for i in range(len(keys)):
+                if keys[i] > end_key:
+                    return self._format_result(results, self.buffer.get_io_cost(), time.time() - time_start)
+                if keys[i] >= begin_key:
+                    results.append((page[i], slot[i]))
+
+            if next_leaf == -1:
                 break
-            k, p, s = struct.unpack_from(fmt, data, i)
-            if idx_key.upper() == "STR":
-                k = k.rstrip(b'\x00').decode('utf-8')
-            registros.append((k, p, s))
-        return registros
+            if not keys or keys[-1] <= end_key:
+                raw = self.buffer.read_page(next_leaf)
+                continue
+            break
 
-    def _run_test(idx_key, idx_size, records_file, index_name, etiqueta, delete_keys=None):
-        print("\n" + "#" * 64)
-        print(f"#  PRUEBA {etiqueta}  (archivo: {records_file})")
-        print("#" * 64)
-
-        # Borrar índice previo para empezar limpio
-        index_path = f"data/{index_name}.bin"
-        if os.path.exists(index_path):
-            os.remove(index_path)
-
-        idx = BPlusTreeIndex("test_table", index_name, idx_key, idx_size)
-        # Forzamos orden 3 para ver los splits con pocos registros
-        idx.max_leaf_keys = 3
-        idx.m = 3
-        print(f"Configuración: max_leaf_keys=3, m(orden)=3\n")
-
-        if not os.path.exists(records_file):
-            print(f"[ADVERTENCIA] No existe {records_file}.")
-            print(f"  Genéralo primero con:  python tests/generate_test_data.py\n")
-            return
-
-        registros = _read_records(records_file, idx_key, idx_size)
-        print(f"Insertando {len(registros)} registros uno por uno...\n")
-
-        for k, p, s in registros:
-            print(f">>> add(key={k!r}, RID=(Pág {p}, Slot {s}))")
-            idx.add(k, p, s)
-            idx.print_tree()
-
-        print("\n--- VERIFICACIÓN: search() para cada llave insertada ---")
-        for k, p, s in registros:
-            res = idx.search(k)
-            esperado = (p, s)
-            ok = res['data'] == esperado
-            estado = "OK " if ok else f"FAIL (esperado {esperado})"
-            print(f"  search({k!r:>10}) -> {res['data']}  [{estado}]")
-
-        # Búsqueda de una llave que NO existe
-        clave_inexistente = 99999 if idx_key.upper() == "INT" else "zzz_no"
-        res = idx.search(clave_inexistente)
-        print(f"  search({clave_inexistente!r}) -> {res['data']}  [esperado None]")
-
-        # ============================================================
-        #  FASE DE ELIMINACIÓN
-        # ============================================================
-        if delete_keys:
-            print("\n" + "=" * 64)
-            print(f"  FASE DE ELIMINACIÓN ({etiqueta})")
-            print("=" * 64)
-
-            for k in delete_keys:
-                print(f"\n>>> remove(key={k!r})")
-                res = idx.remove(k)
-                estado = "BORRADO" if res['data'] else "NO EXISTÍA"
-                print(f"    resultado: {estado}  (io_acum={res['disk_accesses']}, "
-                      f"t={res['execution_time_ms']*1000:.3f} ms)")
-                idx.print_tree()
-
-                # Verificación: buscar la llave debe devolver None tras un borrado exitoso
-                if res['data']:
-                    chk = idx.search(k)
-                    ok = chk['data'] is None
-                    print(f"    search({k!r}) -> {chk['data']}  "
-                          f"[{'OK ' if ok else 'FAIL'} esperado None]")
-
-            print("\n--- VERIFICACIÓN FINAL: las llaves no borradas siguen accesibles ---")
-            registros = _read_records(records_file, idx_key, idx_size)
-            borradas = set()
-            for k in delete_keys:
-                kk = k.encode('utf-8')[:idx_size].ljust(idx_size, b'\x00') if idx_key.upper() == "STR" and isinstance(k, str) else k
-                borradas.add(kk if idx_key.upper() == "STR" else k)
-            for k, p, s in registros:
-                kk = k.encode('utf-8')[:idx_size].ljust(idx_size, b'\x00') if idx_key.upper() == "STR" else k
-                if kk in borradas:
-                    continue
-                res = idx.search(k)
-                esperado = (p, s)
-                ok = res['data'] == esperado
-                estado = "OK " if ok else f"FAIL (esperado {esperado})"
-                print(f"  search({k!r:>10}) -> {res['data']}  [{estado}]")
-
-    # INT: borrar 60 (borrow del derecho), 80 (merge con izq), 50 (sin underflow), 99999 (no existe)
-    _run_test("INT", 4, "tests/data/records_int.bin", "idx_test_int", "INT",
-              delete_keys=[60, 80, 50, 99999])
-    # STR: borrar luz (sin underflow), fin (borrow del der), abc (merge con der), "zzz_no" (no existe)
-    _run_test("STR", 8, "tests/data/records_str.bin", "idx_test_str", "STR",
-              delete_keys=["luz", "fin", "abc", "zzz_no"])
+        return self._format_result(results, self.buffer.get_io_cost(), time.time() - time_start)

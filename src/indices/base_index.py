@@ -13,7 +13,7 @@ class BaseIndex(ABC):
         }
 
     @abstractmethod
-    def add(self, key, record) -> dict:
+    def add(self, key, page_id_value, slot_id_value) -> dict:
         pass
 
     @abstractmethod

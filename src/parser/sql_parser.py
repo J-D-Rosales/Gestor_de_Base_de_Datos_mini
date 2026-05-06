@@ -1,13 +1,137 @@
-import ply.yacc as yacc
+from pathlib import Path
 import csv
+import sys
 
-from sql_lexer import tokens
+import ply.yacc as yacc
+
+if __package__ in (None, ""):
+    project_root = Path(__file__).resolve().parents[2]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+    from src.parser.sql_lexer import tokens
+    from src.indices.bplus_tree import BPlusTreeIndex
+    from src.indices.extendible_hashing import ExtendibleHashing
+    from src.indices.r_tree import RTree
+else:
+    from .sql_lexer import tokens
+    from ..indices.bplus_tree import BPlusTreeIndex
+    from ..indices.extendible_hashing import ExtendibleHashing
+    from ..indices.r_tree import RTree
 
 class SQLParser:
     def __init__(self):
+        self.project_root = Path(__file__).resolve().parents[2]
+        self.data_dir = self.project_root / "data"
         self.catalog = {}
+        self.indices = {}
         self.tokens = tokens # Necesario para que yacc sepa qué tokens usar
         self.parser = yacc.yacc(module=self)
+
+    def _resolve_path(self, raw_path):
+        candidate = Path(raw_path)
+        if candidate.is_absolute() and candidate.exists():
+            return candidate
+
+        search_roots = [Path.cwd(), self.project_root, self.project_root / "src", self.project_root / "src" / "data", self.project_root / "data"]
+        for root in search_roots:
+            resolved = (root / raw_path).resolve()
+            if resolved.exists():
+                return resolved
+
+        return (self.project_root / raw_path).resolve()
+
+    def _ensure_data_dir(self):
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+
+    def _index_name(self, table_name, column_name, suffix):
+        return f"{table_name}_{column_name}_{suffix}"
+
+    def _cast_value(self, raw_value, data_type):
+        kind = (data_type or "").upper()
+        if kind == "INT":
+            return int(raw_value)
+        if kind == "FLOAT":
+            return float(raw_value)
+        return raw_value
+
+    def _load_indices_from_csv(self, table_name, columnas, csv_path):
+        self._ensure_data_dir()
+        self.indices.setdefault(table_name, {})
+
+        csv_path = self._resolve_path(csv_path)
+        if not csv_path.exists():
+            raise FileNotFoundError(f"No se encontró el archivo CSV: {csv_path}")
+
+        indexed_columns = [col for col in columnas if col.get("indice") in {"BTREE", "HASH", "RTREE"}]
+        if not indexed_columns:
+            return 0
+
+        with open(csv_path, mode="r", encoding="utf-8", newline="") as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            if header is None:
+                return 0
+
+            header_map = {name.lower(): idx for idx, name in enumerate(header)}
+            row_number = 0
+
+            for row in reader:
+                row_number += 1
+                for col in indexed_columns:
+                    if col["indice"] == "BTREE":
+                        idx = header_map.get(col["nombre"].lower())
+                        if idx is None or idx >= len(row):
+                            continue
+
+                        index = self.indices[table_name].get(col["nombre"])
+                        if index is None:
+                            index = BPlusTreeIndex(
+                                table_name,
+                                self._index_name(table_name, col["nombre"], "btree"),
+                                col["tipo"],
+                                60 if col["tipo"].upper() in {"VARCHAR", "STR"} else 0,
+                            )
+                            self.indices[table_name][col["nombre"]] = index
+
+                        value = self._cast_value(row[idx], col["tipo"])
+                        index.add(value, row_number, 0)
+
+                    elif col["indice"] == "HASH":
+                        idx = header_map.get(col["nombre"].lower())
+                        if idx is None or idx >= len(row):
+                            continue
+
+                        index = self.indices[table_name].get(col["nombre"])
+                        if index is None:
+                            index = ExtendibleHashing(table_name, self._index_name(table_name, col["nombre"], "hash"), col["tipo"], key_size=60)
+                            self.indices[table_name][col["nombre"]] = index
+
+                        value = self._cast_value(row[idx], col["tipo"])
+                        index.add(value, row_number)
+
+                    elif col["indice"] == "RTREE":
+                        rtree_cols = col.get("rtree_cols") or []
+                        if len(rtree_cols) != 2:
+                            continue
+
+                        idx_x = header_map.get(rtree_cols[0].lower())
+                        idx_y = header_map.get(rtree_cols[1].lower())
+                        if idx_x is None or idx_y is None or idx_x >= len(row) or idx_y >= len(row):
+                            continue
+
+                        index = self.indices[table_name].get(col["nombre"])
+                        if index is None:
+                            index = RTree(table_name)
+                            self.indices[table_name][col["nombre"]] = index
+
+                        point = (
+                            self._cast_value(row[idx_x], col["tipo"]),
+                            self._cast_value(row[idx_y], col["tipo"]),
+                        )
+                        index.add(point, row_number, 0)
+
+        return row_number
 
     # --- REGLAS DE LA GRAMÁTICA ---
     #==================
@@ -37,76 +161,17 @@ class SQLParser:
         """
         table_name = p[3].lower()
         columnas = p[5]
-        csv_path = p[9]
+        csv_path = self._resolve_path(p[9])
         
         # 1. Guardar en el catálogo la estructura oficial
         self.catalog[table_name] = {
             "columnas": columnas,
-            "csv_path": csv_path
+            "csv_path": str(csv_path)
         }
-        
-        cont = 0
-        try:
-            # Se realiza el codigo normal, en caso falle se da un exception y se hace la simulación
-            try:
-                from sequential_file import SequentialFile
-                from bplus_tree import BPlusTree
-                from extendible_hashing import ExtendibleHashing
-                from r_tree import RTree
-                
-                # Inicializamos el archivo principal con todo el esquema y K (ej. K=100)
-                archivo_principal = SequentialFile(table_name, columnas, k_limit=100)
-                
-                # Inicializamos los índices
-                indices_activos = {}
-                for col in columnas:
-                    if col['indice'] == 'BTREE':
-                        indices_activos[col['nombre']] = BPlusTree(table_name, col['nombre'], col['tipo'])
-                    elif col['indice'] == 'HASH':
-                        indices_activos[col['nombre']] = ExtendibleHashing(table_name, col['nombre'], col['tipo'])
-                    elif col['indice'] == 'RTREE':
-                        # Le mandamos el nombre de la tabla y los nombres de los ejes X e Y
-                        indices_activos[col['nombre']] = RTree(table_name, col['rtree_cols'][0], col['rtree_cols'][1])
-                
-                # Carga masiva conectada a los archivos reales
-                with open(csv_path, mode='r', encoding='utf-8') as f:
-                    reader = csv.reader(f)
-                    cabecera = next(reader, None)
-                    
-                    for fila in reader:
-                        cont += 1
-                        # guardar en archivo principal
-                        puntero_fisico = archivo_principal.add(fila)
-                        
-                        # andar llaves a cada índice
-                        for col in columnas:
-                            if col['indice'] == 'BTREE' or col['indice'] == 'HASH':
-                                indice_csv = cabecera.index(col['nombre'])
-                                valor_llave = fila[indice_csv]
-                                indices_activos[col['nombre']].add(key=valor_llave, pointer=puntero_fisico)
-                                
-                            elif col['indice'] == 'RTREE':
-                                # El R-Tree necesita 2 datos (X, Y) para indexar, así que buscamos ambos en la fila usando la cabecera
-                                idx_x = cabecera.index(col['rtree_cols'][0])
-                                idx_y = cabecera.index(col['rtree_cols'][1])
-                                valor_x = fila[idx_x]
-                                valor_y = fila[idx_y]
-                                # Pasamos una tupla (X, Y) como llave
-                                indices_activos[col['nombre']].add(key=(valor_x, valor_y), pointer=puntero_fisico)
-                                
-                p[0] = f"¡ÉXITO! Tabla '{table_name}' lista en disco. Se indexaron {cont} filas."
 
-            # === SI LOS ARCHIVOS FÍSICOS NO EXISTEN (SIMULACIÓN) ===
-            except ImportError:
-                with open(csv_path, mode='r', encoding='utf-8') as f:
-                    reader = csv.reader(f)
-                    cabecera = next(reader, None)
-                    for fila in reader:
-                        cont += 1
-                        if cont <= 10:
-                            print(f"   [SIMULACIÓN - DATO LEÍDO] ID: {fila[0]} -> {fila[1][:20]}...")
-                            
-                p[0] = f"¡ÉXITO! Tabla '{table_name}' lista. (Simulación: {cont} filas procesadas)"
+        try:
+            filas_indexadas = self._load_indices_from_csv(table_name, columnas, csv_path)
+            p[0] = f"¡ÉXITO! Tabla '{table_name}' lista en disco. Se indexaron {filas_indexadas} filas."
                 
         except Exception as e:
             p[0] = f"ERROR DE EJECUCIÓN O LECTURA CSV: {str(e)}"
@@ -121,29 +186,30 @@ class SQLParser:
 
         # 1. Guardar en el catálogo
         self.catalog[table_name] = {"columnas": columnas}
+        self.indices.setdefault(table_name, {})
         
-        # === INTENTO DE USAR EL CÓDIGO REAL ===
         try:
-            from sequential_file import SequentialFile
-            from bplus_tree import BPlusTree
-            from extendible_hashing import ExtendibleHashing
-            from r_tree import RTree
-            
-            SequentialFile(table_name, columnas, k_limit=100)
-            
             for col in columnas:
                 if col['indice'] == 'BTREE':
-                    BPlusTree(table_name, col['nombre'], col['tipo'])
+                    self.indices[table_name][col['nombre']] = BPlusTreeIndex(
+                        table_name,
+                        self._index_name(table_name, col['nombre'], 'btree'),
+                        col['tipo'],
+                        60 if col['tipo'].upper() in {'VARCHAR', 'STR'} else 0,
+                    )
                 elif col['indice'] == 'HASH':
-                    ExtendibleHashing(table_name, col['nombre'], col['tipo'])
+                    self.indices[table_name][col['nombre']] = ExtendibleHashing(
+                        table_name,
+                        self._index_name(table_name, col['nombre'], 'hash'),
+                        col['tipo'],
+                        key_size=60,
+                    )
                 elif col['indice'] == 'RTREE':
-                    RTree(table_name, col['rtree_cols'][0], col['rtree_cols'][1])
+                    self.indices[table_name][col['nombre']] = RTree(table_name)
                     
             p[0] = f"¡ÉXITO! Tabla '{table_name}' inicializada físicamente en disco. (Vacía)"
-            
-        # === SIMULACIÓN ===
-        except ImportError:
-            p[0] = f"¡ÉXITO! Tabla '{table_name}' lista. (Simulación: Archivos no creados)"
+        except Exception as e:
+            p[0] = f"ERROR DE EJECUCIÓN: {str(e)}"
 
     # 1. SELECT * de Búsqueda Puntual (Point Query)
     def p_sentencia_select_asterisco_igualdad(self, p):
@@ -338,10 +404,13 @@ class SQLParser:
     def execute(self, query):
         return self.parser.parse(query)
 
+    def execute_query(self, query):
+        return self.execute(query)
+
 # Pruebas rápidas
 if __name__ == "__main__":
     db = SQLParser()
-    ruta = "/home/daros/academico/2026-01/DB2/proyecto/src/data/airbnb_database.csv"
+    ruta = "src/data/airbnb_database.csv"
     
     # ¡FÍJATE EN EL PUNTO Y COMA AL FINAL!
     sql = f"CREATE TABLE airbnb (id INT INDEX BTREE, nombre VARCHAR, ciudad VARCHAR, lat FLOAT, long FLOAT, precio FLOAT, tipo VARCHAR, cap INT) FROM FILE '{ruta}';"

@@ -1,6 +1,6 @@
 import ply.yacc as yacc
 import csv
-
+from src.indices.extendible_hashing import ExtendibleHashing
 from sql_lexer import tokens
 
 class SQLParser:
@@ -228,6 +228,8 @@ class SQLParser:
             "tabla": p[3].lower(),
             "valores_a_insertar": p[6] # p[6] es la lista de Python que te devuelve tu sub-regla
         }
+        
+        self.catalog[table_name].add(key_value, row_data)
 
     # Para recolectar los valores del INSERT (Igual a como hiciste con las columnas):
     def p_lista_valores_varios(self, p):

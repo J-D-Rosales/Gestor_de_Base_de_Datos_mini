@@ -7,7 +7,7 @@ class BufferManager:
         self.page_size = page_size
         self.reads = 0
         self.writes = 0
-        
+
         # Si el archivo no existe en la carpeta data/, lo creamos vacío
         if not os.path.exists(self.filepath):
             with open(self.filepath, 'wb') as f:

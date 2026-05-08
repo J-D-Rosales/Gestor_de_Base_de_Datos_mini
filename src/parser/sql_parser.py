@@ -1,32 +1,33 @@
 from pathlib import Path
-import csv
 import sys
 
 import ply.yacc as yacc
 
 if __package__ in (None, ""):
     project_root = Path(__file__).resolve().parents[2]
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
+    src_dir = project_root / "src"
+    indices_dir = src_dir / "indices"
+    # Los módulos de indices/ y executor.py usan imports bare estilo
+    # `from base_index import ...`, así que necesitan src/ y src/indices/
+    # en sys.path (mismo truco que executor.py).
+    for _p in (str(project_root), str(src_dir), str(indices_dir)):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
 
     from src.parser.sql_lexer import tokens
-    from src.indices.bplus_tree import BPlusTreeIndex
-    from src.indices.extendible_hashing import ExtendibleHashing
-    from src.indices.r_tree import RTree
+    from src.executor import Executor
 else:
     from .sql_lexer import tokens
-    from ..indices.bplus_tree import BPlusTreeIndex
-    from ..indices.extendible_hashing import ExtendibleHashing
-    from ..indices.r_tree import RTree
+    from ..executor import Executor
 
 class SQLParser:
     def __init__(self):
         self.project_root = Path(__file__).resolve().parents[2]
-        self.data_dir = self.project_root / "data"
-        self.catalog = {}
-        self.indices = {}
-        self.tokens = tokens # Necesario para que yacc sepa qué tokens usar
+        self.tokens = tokens  # Necesario para que yacc sepa qué tokens usar
         self.parser = yacc.yacc(module=self)
+        # Backend de ejecución (catálogo, índices, sequential file). Lo mantenemos
+        # como singleton para que el estado persista entre llamadas a run().
+        self._executor = Executor()
 
     def _resolve_path(self, raw_path):
         candidate = Path(raw_path)
@@ -41,97 +42,23 @@ class SQLParser:
 
         return (self.project_root / raw_path).resolve()
 
-    def _ensure_data_dir(self):
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+    # --- API pública para el frontend -----------------------------------
+    def execute(self, query):
+        """Devuelve solo el AST (lista de dicts/strings). No ejecuta nada."""
+        return self.parser.parse(query)
 
-    def _index_name(self, table_name, column_name, suffix):
-        return f"{table_name}_{column_name}_{suffix}"
+    # Alias retrocompatible.
+    def execute_query(self, query):
+        return self.execute(query)
 
-    def _cast_value(self, raw_value, data_type):
-        kind = (data_type or "").upper()
-        if kind == "INT":
-            return int(raw_value)
-        if kind == "FLOAT":
-            return float(raw_value)
-        return raw_value
-
-    def _load_indices_from_csv(self, table_name, columnas, csv_path):
-        self._ensure_data_dir()
-        self.indices.setdefault(table_name, {})
-
-        csv_path = self._resolve_path(csv_path)
-        if not csv_path.exists():
-            raise FileNotFoundError(f"No se encontró el archivo CSV: {csv_path}")
-
-        indexed_columns = [col for col in columnas if col.get("indice") in {"BTREE", "HASH", "RTREE"}]
-        if not indexed_columns:
-            return 0
-
-        with open(csv_path, mode="r", encoding="utf-8", newline="") as f:
-            reader = csv.reader(f)
-            header = next(reader, None)
-            if header is None:
-                return 0
-
-            header_map = {name.lower(): idx for idx, name in enumerate(header)}
-            row_number = 0
-
-            for row in reader:
-                row_number += 1
-                for col in indexed_columns:
-                    if col["indice"] == "BTREE":
-                        idx = header_map.get(col["nombre"].lower())
-                        if idx is None or idx >= len(row):
-                            continue
-
-                        index = self.indices[table_name].get(col["nombre"])
-                        if index is None:
-                            index = BPlusTreeIndex(
-                                table_name,
-                                self._index_name(table_name, col["nombre"], "btree"),
-                                col["tipo"],
-                                60 if col["tipo"].upper() in {"VARCHAR", "STR"} else 0,
-                            )
-                            self.indices[table_name][col["nombre"]] = index
-
-                        value = self._cast_value(row[idx], col["tipo"])
-                        index.add(value, row_number, 0)
-
-                    elif col["indice"] == "HASH":
-                        idx = header_map.get(col["nombre"].lower())
-                        if idx is None or idx >= len(row):
-                            continue
-
-                        index = self.indices[table_name].get(col["nombre"])
-                        if index is None:
-                            index = ExtendibleHashing(table_name, self._index_name(table_name, col["nombre"], "hash"), col["tipo"], key_size=60)
-                            self.indices[table_name][col["nombre"]] = index
-
-                        value = self._cast_value(row[idx], col["tipo"])
-                        index.add(value, row_number)
-
-                    elif col["indice"] == "RTREE":
-                        rtree_cols = col.get("rtree_cols") or []
-                        if len(rtree_cols) != 2:
-                            continue
-
-                        idx_x = header_map.get(rtree_cols[0].lower())
-                        idx_y = header_map.get(rtree_cols[1].lower())
-                        if idx_x is None or idx_y is None or idx_x >= len(row) or idx_y >= len(row):
-                            continue
-
-                        index = self.indices[table_name].get(col["nombre"])
-                        if index is None:
-                            index = RTree(table_name)
-                            self.indices[table_name][col["nombre"]] = index
-
-                        point = (
-                            self._cast_value(row[idx_x], col["tipo"]),
-                            self._cast_value(row[idx_y], col["tipo"]),
-                        )
-                        index.add(point, row_number, 0)
-
-        return row_number
+    def run(self, query):
+        """Parsea y ejecuta. Delega cada AST al Executor (catálogo + índices
+        + sequential file). Devuelve una lista de resultados, uno por sentencia,
+        con la misma forma para todas las operaciones (status/op/...)."""
+        asts = self.parser.parse(query)
+        if asts is None:
+            return [{"status": "error", "msg": "Sintaxis inválida o consulta vacía"}]
+        return [self._executor.execute(ast) for ast in asts]
 
     # --- REGLAS DE LA GRAMÁTICA ---
     #==================
@@ -159,57 +86,25 @@ class SQLParser:
         """
         sentencia : CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE STRING
         """
-        table_name = p[3].lower()
-        columnas = p[5]
-        csv_path = self._resolve_path(p[9])
-        
-        # 1. Guardar en el catálogo la estructura oficial
-        self.catalog[table_name] = {
-            "columnas": columnas,
-            "csv_path": str(csv_path)
+        # Resolvemos la ruta a absoluta para que el executor no la re-resuelva
+        # contra su propio data_dir.
+        csv_path = str(self._resolve_path(p[9]))
+        p[0] = {
+            "tipo_operacion": "CREATE_TABLE",
+            "tabla": p[3].lower(),
+            "columnas": p[5],
+            "csv_path": csv_path,
         }
-
-        try:
-            filas_indexadas = self._load_indices_from_csv(table_name, columnas, csv_path)
-            p[0] = f"¡ÉXITO! Tabla '{table_name}' lista en disco. Se indexaron {filas_indexadas} filas."
-                
-        except Exception as e:
-            p[0] = f"ERROR DE EJECUCIÓN O LECTURA CSV: {str(e)}"
-
 
     def p_sentencia_create_file_sin_archivos(self, p):
         """
         sentencia : CREATE TABLE ID LPAREN lista_columnas RPAREN
         """
-        table_name = p[3].lower()
-        columnas = p[5]
-
-        # 1. Guardar en el catálogo
-        self.catalog[table_name] = {"columnas": columnas}
-        self.indices.setdefault(table_name, {})
-        
-        try:
-            for col in columnas:
-                if col['indice'] == 'BTREE':
-                    self.indices[table_name][col['nombre']] = BPlusTreeIndex(
-                        table_name,
-                        self._index_name(table_name, col['nombre'], 'btree'),
-                        col['tipo'],
-                        60 if col['tipo'].upper() in {'VARCHAR', 'STR'} else 0,
-                    )
-                elif col['indice'] == 'HASH':
-                    self.indices[table_name][col['nombre']] = ExtendibleHashing(
-                        table_name,
-                        self._index_name(table_name, col['nombre'], 'hash'),
-                        col['tipo'],
-                        key_size=60,
-                    )
-                elif col['indice'] == 'RTREE':
-                    self.indices[table_name][col['nombre']] = RTree(table_name)
-                    
-            p[0] = f"¡ÉXITO! Tabla '{table_name}' inicializada físicamente en disco. (Vacía)"
-        except Exception as e:
-            p[0] = f"ERROR DE EJECUCIÓN: {str(e)}"
+        p[0] = {
+            "tipo_operacion": "CREATE_TABLE",
+            "tabla": p[3].lower(),
+            "columnas": p[5],
+        }
 
     # 1. SELECT * de Búsqueda Puntual (Point Query)
     def p_sentencia_select_asterisco_igualdad(self, p):
@@ -401,24 +296,17 @@ class SQLParser:
     def p_error(self, p):
         print(f"Error de sintaxis en: {p.value if p else 'Fin de archivo'}")
 
-    def execute(self, query):
-        return self.parser.parse(query)
-
-    def execute_query(self, query):
-        return self.execute(query)
-
 # Pruebas rápidas
 if __name__ == "__main__":
     db = SQLParser()
-    ruta = "src/data/airbnb_database.csv"
-    
-    # ¡FÍJATE EN EL PUNTO Y COMA AL FINAL!
-    sql = f"CREATE TABLE airbnb (id INT INDEX BTREE, nombre VARCHAR, ciudad VARCHAR, lat FLOAT, long FLOAT, precio FLOAT, tipo VARCHAR, cap INT) FROM FILE '{ruta}';"
-    
+    ruta = "src/data/airbnb_1000.csv"
+    sql = (
+        f"CREATE TABLE airbnb (id INT INDEX BTREE, name VARCHAR, "
+        f"city VARCHAR INDEX BTREE, lat FLOAT, long FLOAT, price FLOAT, "
+        f"room_type VARCHAR, cap INT) FROM FILE '{ruta}';"
+        "SELECT * FROM airbnb WHERE id = 2577;"
+        "SELECT * FROM airbnb WHERE city = 'Paris';"
+    )
     print("--- INICIANDO PARSER ---")
-    resultados = db.execute(sql)
-    
-    print("\nRESULTADOS:")
-    if resultados:
-        for i, res in enumerate(resultados):
-            print(f"Instrucción {i+1}: {res}")
+    for i, res in enumerate(db.run(sql)):
+        print(f"Instrucción {i+1}:", res)

@@ -24,6 +24,11 @@ src/data/tables/
 *.heap
 
 # =========================
+# CONFIG LOCAL DE STREAMLIT
+# =========================
+frontend/.streamlit/
+
+# =========================
 .DS_Store
 Thumbs.db
 .vscode/

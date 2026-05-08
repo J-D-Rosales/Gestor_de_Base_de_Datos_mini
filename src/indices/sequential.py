@@ -195,6 +195,22 @@ class SequentialFile:
         aux_idx = -(next_ptr + 2)
         return self._read_record(fa, aux_idx)
 
+    def get(self, page_id: int, slot_id: int) -> Optional[Record]:
+        idx = page_id * RECORDS_PER_PAGE + slot_id
+        with open(self.main_path, "rb") as fm:
+            rec = self._read_record(fm, idx)
+            if rec and not rec.is_deleted:
+                return rec
+            return None
+
+    def iter_records(self):
+        with open(self.main_path, "rb") as fm:
+            n = self._read_count(fm)
+            for idx in range(n):
+                rec = self._read_record(fm, idx)
+                if rec and not rec.is_deleted:
+                    yield idx // RECORDS_PER_PAGE, idx % RECORDS_PER_PAGE, rec
+
     def search(self, key: int) -> Optional[Record]:
         self.reset_counters()
         with open(self.main_path, "rb") as fm, open(self.aux_path, "rb") as fa:

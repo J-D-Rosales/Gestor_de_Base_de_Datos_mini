@@ -12,7 +12,6 @@ class ExtendibleHashing(BaseIndex):
         self.key_type = key_type.upper()
         self.page_size = page_size
         
-        # 1. Configuración de tipos y formatos (Polimorfismo)
         if self.key_type in ["INT"]:
             self.key_fmt = 'i'
             self.k_size = 4
@@ -108,6 +107,30 @@ class ExtendibleHashing(BaseIndex):
 
         return self._format_result(result, self.buffer.get_io_cost(), (time.time()-start_t)*1000)
 
+    def search_all(self, key) -> dict:
+        start_t = time.time()
+        self.buffer.reset_io_cost()
+
+        idx = self._get_bucket_index(key)
+        page_id = self.directory[idx]
+
+        results = []
+        while page_id != -1:
+            data = self.buffer.read_page(page_id)
+            d_local, count, next_ov = struct.unpack('iii', data[:12])
+
+            for i in range(count):
+                off = self.header_size + (i * self.record_size)
+                k_raw, val = struct.unpack(self.record_format, data[off:off+self.record_size])
+                k_decoded = k_raw.decode('utf-8').strip('\x00') if isinstance(k_raw, bytes) else k_raw
+
+                if str(k_decoded) == str(key):
+                    results.append(val)
+
+            page_id = next_ov
+
+        return self._format_result(results, self.buffer.get_io_cost(), (time.time()-start_t)*1000)
+
     def add(self, key, value) -> dict:
         start_t = time.time()
         self.buffer.reset_io_cost()
@@ -135,10 +158,10 @@ class ExtendibleHashing(BaseIndex):
                 self._split_bucket(page_id)
                 self._internal_insert(key, value)
             else:
-                # d_local == Global Depth. ¿Ya hay un overflow (K=1)?
+                # d_local == Global Depth. ¿Ya hay overflow encadenado?
                 next_ov = struct.unpack('i', data[8:12])[0]
                 if next_ov == -1:
-                    # Crear el único overflow permitido
+                    # Crear el primer overflow del bucket
                     ov_id = self.next_free_page
                     self.next_free_page += 1
                     self._write_empty_bucket(ov_id, d_local)
@@ -147,11 +170,28 @@ class ExtendibleHashing(BaseIndex):
                     self.buffer.write_page(page_id, new_header + data[12:])
                     self._try_push_to_bucket(ov_id, key, value)
                 else:
-                    # El overflow también está lleno o ya existe, toca duplicar directorio
-                    self.global_depth += 1
-                    self.directory = self.directory + self.directory
-                    self._save_directory()
-                    self._internal_insert(key, value)
+                    # Recorrer la cadena de overflow hasta el último nodo y
+                    # empujar ahí. Si está lleno, anexar un nuevo overflow.
+                    # Esto evita la recursión infinita cuando muchas keys
+                    # hashean al mismo bucket (ej. 'Lima' x 100k); en ese
+                    # caso duplicar el directorio no redistribuye.
+                    tail_id = next_ov
+                    while True:
+                        tail_data = self.buffer.read_page(tail_id)
+                        _, _, t_next = struct.unpack('iii', tail_data[:12])
+                        if t_next == -1:
+                            break
+                        tail_id = t_next
+                    if not self._try_push_to_bucket(tail_id, key, value):
+                        new_ov_id = self.next_free_page
+                        self.next_free_page += 1
+                        self._write_empty_bucket(new_ov_id, d_local)
+                        # Linkear tail.next_ov = new_ov_id
+                        tail_data = self.buffer.read_page(tail_id)
+                        td_local, tcount, _ = struct.unpack('iii', tail_data[:12])
+                        new_header = struct.pack('iii', td_local, tcount, new_ov_id)
+                        self.buffer.write_page(tail_id, new_header + tail_data[12:])
+                        self._try_push_to_bucket(new_ov_id, key, value)
 
     def _try_push_to_bucket(self, page_id, key, value) -> bool:
         data = bytearray(self.buffer.read_page(page_id))

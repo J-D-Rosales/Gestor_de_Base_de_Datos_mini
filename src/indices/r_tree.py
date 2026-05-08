@@ -22,10 +22,10 @@ class RTree(BaseIndex):
         )
 
     def _page_count(self):
-        size = os.path.getsize(self.filename)
-        if size == 0:
-            return 0
-        return (size + self.buffer.page_size - 1) // self.buffer.page_size
+        # Usamos num_pages() del BufferManager para que cuente también las páginas
+        # que aún viven en caché (write-back); de lo contrario os.path.getsize
+        # quedaría desactualizado y add() reescribiría siempre la página 0.
+        return self.buffer.num_pages()
 
     def _page_to_records(self, page_id):
         raw = self.buffer.read_page(page_id)

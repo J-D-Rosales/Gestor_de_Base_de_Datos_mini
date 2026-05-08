@@ -12,11 +12,13 @@ class BPlusTreeIndex(BaseIndex):
     RID_SIZE= 8 #page_id(4 bytes) + slot_id(4 bytes)
     META_DATA_SIZE= 8 #page_root_id(4 bytes) + sigueinte_pagina_libre(4 bytes)
 
-    def __init__ (self, table_name, index_name, idx_key, idx_size):
+    def __init__ (self, table_name, index_name, idx_key, idx_size, filepath: str = None):
         super().__init__(table_name)
         self.index_name = index_name
         self.idx_key = idx_key
-        self.filepath = f"data/{index_name}.bin"
+        # Si se pasa filepath se respeta; si no, se mantiene la ruta histórica.
+        self.filepath = filepath if filepath is not None else f"data/{index_name}.bin"
+        os.makedirs(os.path.dirname(self.filepath) or ".", exist_ok=True)
         self.buffer=BufferManager(self.filepath, self.PAGE_SIZE)
 
         if idx_key.upper()=="INT":
@@ -148,6 +150,7 @@ class BPlusTreeIndex(BaseIndex):
     
     def search(self, key) -> dict:
         time_start = time.time()
+        self.buffer.reset_io_cost()
         key = self._normalize_key(key)
         raw = self.search_leaf(key)
         results = []
@@ -159,7 +162,7 @@ class BPlusTreeIndex(BaseIndex):
                     results.append((page[i], slot[i]))
                 elif keys[i] > key:
                     data = results if results else None
-                    return self._format_result(data, self.buffer.get_io_cost(), time.time() - time_start)
+                    return self._format_result(data, self.buffer.get_io_cost(), round((time.time() - time_start) * 1000, 3))
 
             if next_leaf == -1:
                 break
@@ -169,7 +172,7 @@ class BPlusTreeIndex(BaseIndex):
             break
 
         data = results if results else None
-        return self._format_result(data, self.buffer.get_io_cost(), time.time() - time_start)
+        return self._format_result(data, self.buffer.get_io_cost(), round((time.time() - time_start) * 1000, 3))
 
     def insert_leaf(self, nodo_hoja: bytes, page_id_value: int, slot_id_value: int, value):
 
@@ -281,6 +284,8 @@ class BPlusTreeIndex(BaseIndex):
                 return
 
     def add(self, key, page_id_value: int, slot_id_value: int):
+        time_start = time.time()
+        self.buffer.reset_io_cost()
         key = self._normalize_key(key)
         old_node=self.search_leaf(key)
         keys, page, slot=self.insert_leaf(old_node, page_id_value, slot_id_value, key)
@@ -315,6 +320,8 @@ class BPlusTreeIndex(BaseIndex):
         else:
             updated_leaf=self._pack_leaf(keys, page, slot, parent_id, next_leaf, page_id)
             self.buffer.write_page(page_id, updated_leaf)
+
+        return self._format_result(True, self.buffer.get_io_cost(), round((time.time() - time_start) * 1000, 3))
 
     def _key_display(self, k):
         if isinstance(k, bytes):
@@ -366,6 +373,7 @@ class BPlusTreeIndex(BaseIndex):
 
     def remove(self, key) -> dict:
         time_start = time.time()
+        self.buffer.reset_io_cost()
         key = self._normalize_key(key)
 
         raw = self.search_leaf(key)
@@ -376,10 +384,10 @@ class BPlusTreeIndex(BaseIndex):
             keys, _, _, _, next_leaf, leaf_id = self._unpack_leaf(raw)
 
         if key not in keys:
-            return self._format_result(False, self.buffer.get_io_cost(), time.time() - time_start)
+            return self._format_result(False, self.buffer.get_io_cost(), round((time.time() - time_start) * 1000, 3))
 
         self._delete_entry(leaf_id, key, pointer=None)
-        return self._format_result(True, self.buffer.get_io_cost(), time.time() - time_start)
+        return self._format_result(True, self.buffer.get_io_cost(), round((time.time() - time_start) * 1000, 3))
 
     def _delete_entry(self, node_id, key, pointer):
         raw = self.buffer.read_page(node_id)
@@ -528,11 +536,12 @@ class BPlusTreeIndex(BaseIndex):
 
     def range_search(self, begin_key, end_key) -> dict:
         time_start = time.time()
+        self.buffer.reset_io_cost()
         begin_key = self._normalize_key(begin_key)
         end_key = self._normalize_key(end_key)
 
         if begin_key > end_key:
-            return self._format_result([], self.buffer.get_io_cost(), time.time() - time_start)
+            return self._format_result([], self.buffer.get_io_cost(), round((time.time() - time_start) * 1000, 3))
 
         raw = self.search_leaf(begin_key)
         results = []
@@ -541,7 +550,7 @@ class BPlusTreeIndex(BaseIndex):
             keys, page, slot, _, next_leaf, _ = self._unpack_leaf(raw)
             for i in range(len(keys)):
                 if keys[i] > end_key:
-                    return self._format_result(results, self.buffer.get_io_cost(), time.time() - time_start)
+                    return self._format_result(results, self.buffer.get_io_cost(), round((time.time() - time_start) * 1000, 3))
                 if keys[i] >= begin_key:
                     results.append((page[i], slot[i]))
 
@@ -552,4 +561,4 @@ class BPlusTreeIndex(BaseIndex):
                 continue
             break
 
-        return self._format_result(results, self.buffer.get_io_cost(), time.time() - time_start)
+        return self._format_result(results, self.buffer.get_io_cost(), round((time.time() - time_start) * 1000, 3))

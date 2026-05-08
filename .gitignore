@@ -15,6 +15,15 @@ __pycache__/
 data/*.dat
 
 # =========================
+# DATOS GENERADOS / DATASETS GRANDES
+# =========================
+src/data/airbnb_10000.csv
+src/data/airbnb_100000.csv
+src/data/*.idx
+src/data/tables/
+*.heap
+
+# =========================
 .DS_Store
 Thumbs.db
 .vscode/

@@ -174,6 +174,10 @@ class RTree(BaseIndex):
         split_node = None
         if len(leaf.entries) > MAX_ENTRIES:
             split_node = self._split_node(leaf)
+        else:
+            self._write_node(leaf)
+            if leaf.page_id == self.root_id:
+                return self._result(["inserted"], start)
 
         self._adjust_tree(leaf, split_node)
         return self._result(["inserted"], start)

@@ -4,8 +4,12 @@ import os
 import time
 import heapq
 
-from src.indices.base_index import BaseIndex
-from src.buffer_manager import BufferManager
+try:
+    from .base_index import BaseIndex
+    from ..buffer_manager import BufferManager
+except ImportError:
+    from base_index import BaseIndex
+    from buffer_manager import BufferManager
 
 PAGE_SIZE = 4096
 HEADER_FMT = "<iiii"

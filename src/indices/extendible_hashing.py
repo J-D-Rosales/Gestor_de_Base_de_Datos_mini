@@ -2,8 +2,13 @@ import struct
 import time
 import os
 import hashlib
-from src.indices.base_index import BaseIndex
-from src.buffer_manager import BufferManager
+
+try:
+    from .base_index import BaseIndex
+    from ..buffer_manager import BufferManager
+except ImportError:
+    from base_index import BaseIndex
+    from buffer_manager import BufferManager
 
 class ExtendibleHashing(BaseIndex):
     def __init__(self, table_name, index_name, key_type, key_size=30, page_size=4096):
@@ -16,8 +21,8 @@ class ExtendibleHashing(BaseIndex):
             self.key_fmt = 'i'
             self.k_size = 4
         elif self.key_type in ["FLOAT"]:
-            self.key_fmt = 'f'
-            self.k_size = 4
+            self.key_fmt = 'd'
+            self.k_size = 8
         elif self.key_type in ["VARCHAR", "STR"]:
             self.key_fmt = f'{key_size}s'
             self.k_size = key_size

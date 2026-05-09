@@ -19,8 +19,8 @@ try:
     from indices.bplus_tree import BPlusTreeIndex as _RealBPlusTree
     from indices.heap_file import HeapFile as _RealHeapFile
     from indices.sequential_index import SequentialIndex as _RealSequentialIndex
-    from src.indices.extendible_hashing import ExtendibleHashing as _RealHash
-    from src.indices.r_tree import RTree as _RealRTree
+    from indices.extendible_hashing import ExtendibleHashing as _RealHash
+    from indices.r_tree import RTree as _RealRTree
     _REAL_BACKEND = True
 except Exception as _e:
     _REAL_BACKEND = False

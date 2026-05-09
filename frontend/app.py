@@ -22,58 +22,41 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
 @st.cache_resource
 def get_parser() -> SQLParser:
     return SQLParser()
 
 
-TABLE_NAME = "airbnb"
+# Columnas reales del CSV `airbnb_database.csv`. Si el usuario crea su tabla con
+# estas columnas (o un prefijo de ellas en el mismo orden), la ingesta funciona.
 DATA_COLUMNS = ["id", "name", "city", "lat", "lng", "price", "room_type", "accommodates"]
-INDEX_OPTIONS = {
-    "B+ Tree":         "BTREE",
-    "Extendible Hash": "HASH",
-    "Sequential":      "SEQUENTIAL",
-}
 
 
-INDEXABLE_COLUMNS = ["id", "name", "city", "room_type", "accommodates"]
+CREATE_TEMPLATE = (
+    "CREATE TABLE airbnb20k (\n"
+    "  id INT INDEX BTREE,\n"
+    "  name VARCHAR,\n"
+    "  city VARCHAR INDEX BTREE,\n"
+    "  lat FLOAT,\n"
+    "  lng FLOAT,\n"
+    "  price FLOAT,\n"
+    "  room_type VARCHAR,\n"
+    "  accommodates INT\n"
+    ") FROM FILE 'airbnb_database.csv' WITH N=20000;"
+)
 
 
-def _create_table_sql(csv_filename: str, primary_index: str,
-                      cols_to_index: list[str]) -> str:
-    pieces = []
-    for c in DATA_COLUMNS:
-        if c == "id":
-            tipo = "INT"
-        elif c in ("lat", "lng", "price"):
-            tipo = "FLOAT"
-        elif c == "accommodates":
-            tipo = "INT"
-        else:
-            tipo = "VARCHAR"
-        if c in cols_to_index:
-            pieces.append(f"{c} {tipo} INDEX {primary_index}")
-        else:
-            pieces.append(f"{c} {tipo}")
-    cols_sql = ", ".join(pieces)
-    return f"CREATE TABLE {TABLE_NAME} ({cols_sql}) FROM FILE '{csv_filename}';"
-
-
-def _csv_filename(dataset_size: int) -> str:
-    return {
-        1_000:   "airbnb_1000.csv",
-        10_000:  "airbnb_10000.csv",
-        100_000: "airbnb_100000.csv",
-    }[dataset_size]
-
-
-def _filas_to_df(filas: list[list]) -> pd.DataFrame | None:
+def _filas_to_df(filas: list[list], columnas: list[str] | None = None) -> pd.DataFrame | None:
     if not filas:
         return None
-    return pd.DataFrame(filas, columns=DATA_COLUMNS)
+    cols = columnas or DATA_COLUMNS
+    if filas and len(filas[0]) != len(cols):
+        cols = [f"c{i}" for i in range(len(filas[0]))]
+    return pd.DataFrame(filas, columns=cols)
+
 
 def execute_sql(sql: str) -> dict:
-
     parser = get_parser()
     t0 = time.time()
     try:
@@ -129,8 +112,19 @@ def execute_sql(sql: str) -> dict:
     elif op == "DELETE":
         msg = f"{res.get('borrados', 0)} fila(s) eliminada(s)."
     elif op == "CREATE_TABLE":
-        msg = (f"Tabla '{res.get('tabla')}' creada. "
+        n_rows = res.get("n_rows", 0)
+        msg = (f"Tabla '{res.get('tabla')}' creada con {n_rows:,} filas. "
                f"Índices: {res.get('indices', {})}.")
+    elif op == "SHOW_TABLES":
+        df = _filas_to_df(res.get("filas", []), res.get("columnas"))
+        msg = f"{res.get('n', 0)} tabla(s) en el catálogo."
+    elif op == "VIEW_INDICES":
+        df = _filas_to_df(res.get("filas", []), res.get("columnas"))
+        msg = f"Esquema de '{res.get('tabla')}'."
+    elif op == "DROP_TABLE":
+        eliminados = res.get("archivos_eliminados") or []
+        msg = (f"Tabla '{res.get('tabla')}' eliminada "
+               f"({len(eliminados)} archivo(s)/carpeta(s) borrados).")
     else:
         msg = f"OP={op} status={res.get('status')}"
 
@@ -152,19 +146,35 @@ if "last_result" not in st.session_state:
         "message": "Aún no se ha ejecutado ninguna consulta.",
         "warning": None, "raw": None,
     }
-if "table_loaded" not in st.session_state:
-    st.session_state.table_loaded = False
-if "active_index" not in st.session_state:
-    st.session_state.active_index = None
-if "active_size" not in st.session_state:
-    st.session_state.active_size = None
+if "tables_known" not in st.session_state:
+    st.session_state.tables_known = []
+if "active_table" not in st.session_state:
+    st.session_state.active_table = None
 if "sql_text" not in st.session_state:
-    st.session_state.sql_text = ""
+    st.session_state.sql_text = CREATE_TEMPLATE
 
 
 def run_and_store(sql: str):
     res = execute_sql(sql)
     st.session_state.last_result = res
+    raw = res.get("raw") or {}
+    op = raw.get("op")
+    if op == "CREATE_TABLE" and raw.get("status") == "ok":
+        nombre = raw.get("tabla")
+        if nombre and nombre not in st.session_state.tables_known:
+            st.session_state.tables_known.append(nombre)
+        st.session_state.active_table = nombre
+    if op == "SHOW_TABLES" and raw.get("status") == "ok":
+        st.session_state.tables_known = [f[0] for f in raw.get("filas", [])]
+    if op == "DROP_TABLE" and raw.get("status") == "ok":
+        nombre = raw.get("tabla")
+        if nombre in st.session_state.tables_known:
+            st.session_state.tables_known.remove(nombre)
+        if st.session_state.active_table == nombre:
+            st.session_state.active_table = (
+                st.session_state.tables_known[-1]
+                if st.session_state.tables_known else None
+            )
 
 
 with st.sidebar:
@@ -172,69 +182,25 @@ with st.sidebar:
     st.caption("UTEC - Base de Datos II")
 
     st.divider()
-    st.subheader("Dataset")
-    dataset_size = st.radio(
-        "Número de registros",
-        options=[1_000, 10_000, 100_000],
-        format_func=lambda x: f"{x:,}",
-        index=0,
-        horizontal=True,
-        key="dataset_size",
+    st.subheader("Catálogo")
+    st.caption(
+        "Las tablas se crean exclusivamente desde la consola con "
+        "`CREATE TABLE ... FROM FILE 'airbnb_database.csv' WITH N=<filas>;`. "
+        "Cada tabla tiene su propio heap independiente."
     )
+    if st.button("SHOW TABLES", width="stretch"):
+        run_and_store("SHOW TABLES;")
+        st.rerun()
 
-    st.subheader("Índice de prueba")
-    index_label = st.selectbox(
-        "Técnica",
-        options=list(INDEX_OPTIONS.keys()),
-        index=0,
-        key="index_label",
-        help=("Define qué tipo de índice se construye. Cambiá la opción y "
-              "volvé a cargar el dataset para comparar entre técnicas."),
-    )
-    index_code = INDEX_OPTIONS[index_label]
-
-    cols_to_index = st.multiselect(
-        "Columnas a indexar",
-        options=INDEXABLE_COLUMNS,
-        default=["id", "city"],
-        help=("El índice elegido se construye sobre cada columna seleccionada. "
-              "Las queries WHERE <col> = X / BETWEEN sobre esas columnas "
-              "usarán ese índice. Más columnas = carga más lenta."),
-    )
-    if not cols_to_index:
-        st.error("Seleccioná al menos una columna a indexar.")
-
-    if st.button("Cargar dataset", use_container_width=True, type="primary",
-                 disabled=not cols_to_index):
-        csv_name = _csv_filename(dataset_size)
-        sql = _create_table_sql(csv_name, index_code, cols_to_index)
-        with st.spinner(
-            f"Cargando {csv_name} con índice {index_code} sobre "
-            f"{', '.join(cols_to_index)}..."
-        ):
-            res = execute_sql(sql)
-        st.session_state.last_result = res
-        if res["raw"] and res["raw"].get("status") == "ok":
-            st.session_state.table_loaded = True
-            st.session_state.active_index = index_code
-            st.session_state.active_size = dataset_size
-            st.session_state.active_cols = list(cols_to_index)
-            st.success(res["message"])
-        else:
-            st.session_state.table_loaded = False
-            st.error(res["message"])
-
-    st.divider()
-    st.caption("Estado actual")
-    if st.session_state.table_loaded:
-        cols = ", ".join(st.session_state.get("active_cols", []))
-        st.success(
-            f"Tabla `{TABLE_NAME}` cargada\n\n"
-            f"- Filas: **{st.session_state.active_size:,}**\n"
-            f"- Índice **{st.session_state.active_index}** sobre: **{cols}**"
-        )
+    if st.session_state.tables_known:
+        st.markdown("**Tablas detectadas:**")
+        for t in st.session_state.tables_known:
+            marca = " :star:" if t == st.session_state.active_table else ""
+            st.markdown(f"- `{t}`{marca}")
+        st.caption(":star: = última creada/usada en la consola")
     else:
-        st.warning("Pulsa 'Cargar dataset' antes de consultar.")
+        st.info("Aún no hay tablas. Ejecutá un CREATE TABLE en la consola.")
+
 
 st.title("Mini SGBD - Consola")
 st.caption("Frontend de consultas con métricas reales de I/O y latencia.")
@@ -250,44 +216,56 @@ if res.get("warning"):
     st.warning(res["warning"])
 st.divider()
 
-QUERY_TEMPLATES = {
-    "SELECT id":     f"SELECT * FROM {TABLE_NAME} WHERE id = 2577;",
-    "SELECT city":   f"SELECT * FROM {TABLE_NAME} WHERE city = 'Paris';",
-    "SELECT room":   f"SELECT * FROM {TABLE_NAME} WHERE room_type = 'Entire place';",
-    "SELECT accom":  f"SELECT * FROM {TABLE_NAME} WHERE accommodates = 4;",
-    "RANGE id":      f"SELECT * FROM {TABLE_NAME} WHERE id BETWEEN 1000 AND 5000;",
-    "RANGE accom":   f"SELECT * FROM {TABLE_NAME} WHERE accommodates BETWEEN 2 AND 4;",
-    "INSERT":        (f"INSERT INTO {TABLE_NAME} VALUES "
-                      "(99999, 'New', 'Lima', -12.1, -77.0, 85.0, 'Loft', 2);"),
-    "DELETE":        f"DELETE FROM {TABLE_NAME} WHERE id = 99999;",
-}
+
+def _active_or(default: str) -> str:
+    return st.session_state.active_table or default
+
+
+def _build_templates() -> dict[str, str]:
+    t = _active_or("airbnb20k")
+    return {
+        "CREATE 1k":     CREATE_TEMPLATE.replace("airbnb20k", "airbnb1k").replace("N=20000", "N=1000"),
+        "CREATE 20k":    CREATE_TEMPLATE,
+        "CREATE 100k":   CREATE_TEMPLATE.replace("airbnb20k", "airbnb100k").replace("N=20000", "N=100000"),
+        "SHOW TABLES":   "SHOW TABLES;",
+        "VIEW INDICES":  f"VIEW INDICES FROM {t};",
+        "DROP TABLE":    f"DROP TABLE {t};",
+        "SELECT id":     f"SELECT * FROM {t} WHERE id = 2577;",
+        "SELECT city":   f"SELECT * FROM {t} WHERE city = 'Paris';",
+        "RANGE id":      f"SELECT * FROM {t} WHERE id BETWEEN 1000 AND 5000;",
+        "INSERT":        (f"INSERT INTO {t} VALUES "
+                          "(99999, 'New', 'Lima', -12.1, -77.0, 85.0, 'Loft', 2);"),
+        "DELETE":        f"DELETE FROM {t} WHERE id = 99999;",
+    }
+
 
 st.subheader("Consola SQL")
 st.caption(
-    "Tú escribes el SQL. Los botones de abajo solo pegan plantillas en el "
-    "editor — luego puedes editarlas antes de ejecutar. "
-    "Las queries sobre `id` usarán el índice configurado en el sidebar."
+    "Tú escribes el SQL. Las plantillas se adaptan a la última tabla creada. "
+    "Para cargar otra tabla repetí `CREATE TABLE ... WITH N=<filas>;` con un nombre distinto."
 )
 
+QUERY_TEMPLATES = _build_templates()
 tpl_items = list(QUERY_TEMPLATES.items())
-for row_idx in range(0, len(tpl_items), 4):
-    bcols = st.columns(4)
-    for j, (label, template) in enumerate(tpl_items[row_idx:row_idx + 4]):
-        if bcols[j].button(label, use_container_width=True,
+for row_idx in range(0, len(tpl_items), 5):
+    bcols = st.columns(5)
+    for j, (label, template) in enumerate(tpl_items[row_idx:row_idx + 5]):
+        if bcols[j].button(label, width="stretch",
                            key=f"tpl_{label}"):
             st.session_state.sql_text = template
             st.rerun()
 
 sql = st.text_area(
     "SQL",
-    height=140,
+    height=200,
     key="sql_text",
     placeholder=(
         "Ej.\n"
-        f"SELECT * FROM {TABLE_NAME} WHERE id = 2577;\n"
-        f"SELECT * FROM {TABLE_NAME} WHERE id BETWEEN 1000 AND 5000;\n"
-        f"INSERT INTO {TABLE_NAME} VALUES (...);\n"
-        f"DELETE FROM {TABLE_NAME} WHERE id = ...;"
+        "CREATE TABLE airbnb20k (id INT INDEX BTREE, name VARCHAR, ...) "
+        "FROM FILE 'airbnb_database.csv' WITH N=20000;\n"
+        "SHOW TABLES;\n"
+        "VIEW INDICES FROM airbnb20k;\n"
+        "SELECT * FROM airbnb20k WHERE id = 2577;"
     ),
 )
 
@@ -299,4 +277,4 @@ if st.button("Ejecutar", type="primary", key="btn_run_sql"):
         st.warning("Escribe una consulta antes de ejecutar.")
 
 if isinstance(res["data"], pd.DataFrame) and not res["data"].empty:
-    st.dataframe(res["data"], use_container_width=True, hide_index=True)
+    st.dataframe(res["data"], width="stretch", hide_index=True)

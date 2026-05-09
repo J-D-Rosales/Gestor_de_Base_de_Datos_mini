@@ -21,7 +21,7 @@ def main():
             # Ejecutar la consulta a través del parser
             resultado = parser.execute_query(query)
             
-            # Imprimir el resultado formateado
+            # Imprimir elj resultado formateado
             print("--- Resultado ---")
             for key, value in resultado.items():
                 print(f"  {key}: {value}")

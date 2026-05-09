@@ -2,8 +2,12 @@ import os
 import struct
 import time
 
-from base_index import BaseIndex
-from buffer_manager import BufferManager
+try:
+    from .base_index import BaseIndex
+    from ..buffer_manager import BufferManager
+except ImportError:
+    from base_index import BaseIndex
+    from buffer_manager import BufferManager
 
 
 PAGE_SIZE = 4096
@@ -123,10 +127,17 @@ class SequentialIndex(BaseIndex):
         self.main.reset_io_cost()
         self.aux.reset_io_cost()
 
+        n_main = self._file_count(self.main)
         n_aux = self._file_count(self.aux)
+        
+        if n_main == 0:
+            dynamic_k = 1000
+        else:
+            dynamic_k = n_main * 0.10
+        
         self._write_entry(self.aux, n_aux, key, page_id_value, slot_id_value)
 
-        if (n_aux + 1) >= self.K:
+        if (n_aux + 1) > dynamic_k:
             self._rebuild()
 
         return self._format_result(
@@ -303,8 +314,34 @@ class SequentialIndex(BaseIndex):
             all_entries.sort(key=lambda e: int(e[0]))
 
         self._truncate(self.main, self.main_path)
-        for i, (key, pid, sid) in enumerate(all_entries):
-            self._write_entry(self.main, i, key, pid, sid)
+        
+        # Bulk write: empaquetar todas las páginas en memoria y escribir en bloque
+        pages_to_write = {}
+        page_id = 0
+        slot = 0
+        
+        for key, pid, sid in all_entries:
+            if page_id not in pages_to_write:
+                pages_to_write[page_id] = bytearray(PAGE_SIZE)
+                struct.pack_into(HEADER_FORMAT, pages_to_write[page_id], 0, 0)
+            
+            page = pages_to_write[page_id]
+            offset = HEADER_SIZE + slot * self.entry_size
+            page[offset:offset + self.entry_size] = self._pack_entry(key, pid, sid)
+            
+            # Actualizar count en la cabecera
+            count = struct.unpack_from(HEADER_FORMAT, page, 0)[0]
+            struct.pack_into(HEADER_FORMAT, page, 0, count + 1)
+            
+            slot += 1
+            if slot >= self.entries_per_page:
+                page_id += 1
+                slot = 0
+        
+        # Escribir todas las páginas compiladas de una sola vez
+        for pid in sorted(pages_to_write.keys()):
+            self.main.write_page(pid, bytes(pages_to_write[pid]))
+        
         self._truncate(self.aux, self.aux_path)
 
     def flush(self):

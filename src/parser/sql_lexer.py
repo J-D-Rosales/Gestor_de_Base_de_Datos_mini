@@ -73,7 +73,7 @@ def t_error(t):
     t.lexer.skip(1)
 
 def t_NUMBER(t):
-    r'\d+(\.\d+)?' # Atrapa enteros (10) o decimales (10.5)
+    r'-?\d+(\.\d+)?' # Atrapa enteros/decimales positivos y negativos
     t.value = float(t.value) if '.' in t.value else int(t.value)
     return t
 # Construir el analizador léxico

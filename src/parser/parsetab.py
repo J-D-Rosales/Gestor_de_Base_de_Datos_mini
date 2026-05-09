@@ -6,7 +6,7 @@ _tabversion = '3.10'
 
 _lr_method = 'LALR'
 
-_lr_signature = 'AND ASTERISK BETWEEN BTREE COMMA CREATE DELETE EQUALS FILE FLOAT FROM HASH ID IN INDEX INSERT INT INTO K LPAREN NUMBER POINT RADIUS RPAREN RTREE SELECT SEMICOLON SEQUENTIAL STR STRING TABLE VALUES VARCHAR WHERE\nlista_sentencias : lista_sentencias sentencia SEMICOLON\n\nlista_sentencias : sentencia SEMICOLON\n\nsentencia : CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE STRING\n\nsentencia : CREATE TABLE ID LPAREN lista_columnas RPAREN\n\nsentencia : SELECT ASTERISK FROM ID WHERE ID EQUALS valor\n\nsentencia : SELECT ASTERISK FROM ID WHERE ID BETWEEN valor AND valor\n\nsentencia : SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN\n\nsentencia : SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN\n\nsentencia : INSERT INTO ID VALUES LPAREN lista_valores RPAREN\n\nlista_valores : lista_valores COMMA valor\n\nlista_valores : valor\n\nsentencia : DELETE FROM ID WHERE ID EQUALS valor\n\nvalor : STRING\n      | NUMBER  \n\ncolumna : ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA ID RPAREN\n\ncolumna : ID tipo_dato INDEX tecnica_indice\n\ncolumna : ID tipo_dato\n\nlista_columnas : lista_columnas COMMA columna\n\nlista_columnas : columna\n\ntipo_dato : INT\n          | FLOAT\n          | VARCHAR\n          | STR\n\ntecnica_indice : BTREE\n               | RTREE\n               | HASH\n               | SEQUENTIAL\n'
+_lr_signature = 'AND ASTERISK BETWEEN BTREE COMMA CREATE DELETE EQUALS FILE FLOAT FROM HASH ID IN INDEX INSERT INT INTO K LPAREN NUMBER POINT RADIUS RPAREN RTREE SELECT SEMICOLON SEQUENTIAL STR STRING TABLE VALUES VARCHAR WHERE\n        lista_sentencias : lista_sentencias sentencia SEMICOLON\n        \n        lista_sentencias : sentencia SEMICOLON\n        \n        sentencia : CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE STRING\n        \n        sentencia : CREATE TABLE ID LPAREN lista_columnas RPAREN\n        \n        sentencia : SELECT ASTERISK FROM ID WHERE ID EQUALS valor\n        \n        sentencia : SELECT ASTERISK FROM ID WHERE ID BETWEEN valor AND valor\n        \n        sentencia : SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN\n        \n        sentencia : SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN\n        \n        sentencia : INSERT INTO ID VALUES LPAREN lista_valores RPAREN\n        \n        lista_valores : lista_valores COMMA valor\n        \n        lista_valores : valor\n        \n        sentencia : DELETE FROM ID WHERE ID EQUALS valor\n        \n        valor : STRING\n              | NUMBER  \n        \n        columna : ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA ID RPAREN\n        \n        columna : ID tipo_dato INDEX tecnica_indice\n        \n        columna : ID tipo_dato\n        \n        lista_columnas : lista_columnas COMMA columna\n        \n        lista_columnas : columna\n        \n        tipo_dato : INT\n                  | FLOAT\n                  | VARCHAR\n                  | STR\n        \n        tecnica_indice : BTREE\n                       | RTREE\n                       | HASH\n                       | SEQUENTIAL\n        '
     
 _lr_action_items = {'CREATE':([0,1,8,13,],[3,3,-2,-1,]),'SELECT':([0,1,8,13,],[4,4,-2,-1,]),'INSERT':([0,1,8,13,],[5,5,-2,-1,]),'DELETE':([0,1,8,13,],[6,6,-2,-1,]),'$end':([1,8,13,],[0,-2,-1,]),'SEMICOLON':([2,7,33,38,39,47,49,56,61,65,79,80,],[8,13,-4,-13,-14,-9,-12,-5,-3,-6,-7,-8,]),'TABLE':([3,],[9,]),'ASTERISK':([4,],[10,]),'INTO':([5,],[11,]),'FROM':([6,10,33,],[12,15,42,]),'ID':([9,11,12,15,18,21,25,34,60,67,],[14,16,17,19,22,27,35,22,64,69,]),'LPAREN':([14,20,46,50,51,52,53,54,63,],[18,26,58,60,-24,-25,-26,-27,66,]),'VALUES':([16,],[20,]),'WHERE':([17,19,],[21,25,]),'INT':([22,],[29,]),'FLOAT':([22,],[30,]),'VARCHAR':([22,],[31,]),'STR':([22,],[32,]),'RPAREN':([23,24,28,29,30,31,32,36,37,38,39,43,50,51,52,53,54,59,69,71,72,77,78,],[33,-19,-17,-20,-21,-22,-23,47,-11,-13,-14,-18,-16,-24,-25,-26,-27,-10,71,-15,73,79,80,]),'COMMA':([23,24,28,29,30,31,32,36,37,38,39,43,50,51,52,53,54,59,64,68,71,73,],[34,-19,-17,-20,-21,-22,-23,48,-11,-13,-14,-18,-16,-24,-25,-26,-27,-10,67,70,-15,74,]),'STRING':([26,40,44,45,48,55,62,66,70,75,76,],[38,38,38,38,38,61,38,38,38,38,38,]),'NUMBER':([26,40,44,45,48,62,66,70,75,76,],[39,39,39,39,39,39,39,39,39,39,]),'EQUALS':([27,35,],[40,44,]),'INDEX':([28,29,30,31,32,],[41,-20,-21,-22,-23,]),'BETWEEN':([35,],[45,]),'IN':([35,],[46,]),'AND':([38,39,57,],[-13,-14,62,]),'BTREE':([41,],[51,]),'RTREE':([41,],[52,]),'HASH':([41,],[53,]),'SEQUENTIAL':([41,],[54,]),'FILE':([42,],[55,]),'POINT':([58,],[63,]),'RADIUS':([74,],[75,]),'K':([74,],[76,]),}
 
@@ -27,31 +27,31 @@ for _k, _v in _lr_goto_items.items():
 del _lr_goto_items
 _lr_productions = [
   ("S' -> lista_sentencias","S'",1,None,None,None),
-  ('lista_sentencias -> lista_sentencias sentencia SEMICOLON','lista_sentencias',3,'p_lista_sentencias_varias','sql_parser.py',152),
-  ('lista_sentencias -> sentencia SEMICOLON','lista_sentencias',2,'p_lista_sentencias_una','sql_parser.py',159),
-  ('sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE STRING','sentencia',9,'p_sentencia_create_file_archivos','sql_parser.py',165),
-  ('sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN','sentencia',6,'p_sentencia_create_file_sin_archivos','sql_parser.py',187),
-  ('sentencia -> SELECT ASTERISK FROM ID WHERE ID EQUALS valor','sentencia',8,'p_sentencia_select_asterisco_igualdad','sql_parser.py',222),
-  ('sentencia -> SELECT ASTERISK FROM ID WHERE ID BETWEEN valor AND valor','sentencia',10,'p_sentencia_select_asterisco_rango','sql_parser.py',239),
-  ('sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN','sentencia',18,'p_sentencia_select_espacial_radio','sql_parser.py',255),
-  ('sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN','sentencia',18,'p_sentencia_select_espacial_knn','sql_parser.py',275),
-  ('sentencia -> INSERT INTO ID VALUES LPAREN lista_valores RPAREN','sentencia',7,'p_sentencia_insert','sql_parser.py',294),
-  ('lista_valores -> lista_valores COMMA valor','lista_valores',3,'p_lista_valores_varios','sql_parser.py',306),
-  ('lista_valores -> valor','lista_valores',1,'p_lista_valores_uno','sql_parser.py',312),
-  ('sentencia -> DELETE FROM ID WHERE ID EQUALS valor','sentencia',7,'p_sentencia_delete','sql_parser.py',319),
-  ('valor -> STRING','valor',1,'p_valor','sql_parser.py',334),
-  ('valor -> NUMBER','valor',1,'p_valor','sql_parser.py',335),
-  ('columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA ID RPAREN','columna',9,'p_columna_con_indice_compuesto','sql_parser.py',345),
-  ('columna -> ID tipo_dato INDEX tecnica_indice','columna',4,'p_columna_con_indice','sql_parser.py',356),
-  ('columna -> ID tipo_dato','columna',2,'p_columna_sin_indice','sql_parser.py',363),
-  ('lista_columnas -> lista_columnas COMMA columna','lista_columnas',3,'p_lista_columnas_varias','sql_parser.py',373),
-  ('lista_columnas -> columna','lista_columnas',1,'p_lista_columnas_una','sql_parser.py',381),
-  ('tipo_dato -> INT','tipo_dato',1,'p_tipo_dato','sql_parser.py',390),
-  ('tipo_dato -> FLOAT','tipo_dato',1,'p_tipo_dato','sql_parser.py',391),
-  ('tipo_dato -> VARCHAR','tipo_dato',1,'p_tipo_dato','sql_parser.py',392),
-  ('tipo_dato -> STR','tipo_dato',1,'p_tipo_dato','sql_parser.py',393),
-  ('tecnica_indice -> BTREE','tecnica_indice',1,'p_tecnica_indice','sql_parser.py',400),
-  ('tecnica_indice -> RTREE','tecnica_indice',1,'p_tecnica_indice','sql_parser.py',401),
-  ('tecnica_indice -> HASH','tecnica_indice',1,'p_tecnica_indice','sql_parser.py',402),
-  ('tecnica_indice -> SEQUENTIAL','tecnica_indice',1,'p_tecnica_indice','sql_parser.py',403),
+  ('lista_sentencias -> lista_sentencias sentencia SEMICOLON','lista_sentencias',3,'p_lista_sentencias_varias','sql_parser.py',74),
+  ('lista_sentencias -> sentencia SEMICOLON','lista_sentencias',2,'p_lista_sentencias_una','sql_parser.py',81),
+  ('sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE STRING','sentencia',9,'p_sentencia_create_file_archivos','sql_parser.py',87),
+  ('sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN','sentencia',6,'p_sentencia_create_file_sin_archivos','sql_parser.py',101),
+  ('sentencia -> SELECT ASTERISK FROM ID WHERE ID EQUALS valor','sentencia',8,'p_sentencia_select_asterisco_igualdad','sql_parser.py',112),
+  ('sentencia -> SELECT ASTERISK FROM ID WHERE ID BETWEEN valor AND valor','sentencia',10,'p_sentencia_select_asterisco_rango','sql_parser.py',129),
+  ('sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN','sentencia',18,'p_sentencia_select_espacial_radio','sql_parser.py',145),
+  ('sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN','sentencia',18,'p_sentencia_select_espacial_knn','sql_parser.py',165),
+  ('sentencia -> INSERT INTO ID VALUES LPAREN lista_valores RPAREN','sentencia',7,'p_sentencia_insert','sql_parser.py',184),
+  ('lista_valores -> lista_valores COMMA valor','lista_valores',3,'p_lista_valores_varios','sql_parser.py',196),
+  ('lista_valores -> valor','lista_valores',1,'p_lista_valores_uno','sql_parser.py',202),
+  ('sentencia -> DELETE FROM ID WHERE ID EQUALS valor','sentencia',7,'p_sentencia_delete','sql_parser.py',209),
+  ('valor -> STRING','valor',1,'p_valor','sql_parser.py',224),
+  ('valor -> NUMBER','valor',1,'p_valor','sql_parser.py',225),
+  ('columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA ID RPAREN','columna',9,'p_columna_con_indice_compuesto','sql_parser.py',235),
+  ('columna -> ID tipo_dato INDEX tecnica_indice','columna',4,'p_columna_con_indice','sql_parser.py',246),
+  ('columna -> ID tipo_dato','columna',2,'p_columna_sin_indice','sql_parser.py',253),
+  ('lista_columnas -> lista_columnas COMMA columna','lista_columnas',3,'p_lista_columnas_varias','sql_parser.py',263),
+  ('lista_columnas -> columna','lista_columnas',1,'p_lista_columnas_una','sql_parser.py',271),
+  ('tipo_dato -> INT','tipo_dato',1,'p_tipo_dato','sql_parser.py',280),
+  ('tipo_dato -> FLOAT','tipo_dato',1,'p_tipo_dato','sql_parser.py',281),
+  ('tipo_dato -> VARCHAR','tipo_dato',1,'p_tipo_dato','sql_parser.py',282),
+  ('tipo_dato -> STR','tipo_dato',1,'p_tipo_dato','sql_parser.py',283),
+  ('tecnica_indice -> BTREE','tecnica_indice',1,'p_tecnica_indice','sql_parser.py',290),
+  ('tecnica_indice -> RTREE','tecnica_indice',1,'p_tecnica_indice','sql_parser.py',291),
+  ('tecnica_indice -> HASH','tecnica_indice',1,'p_tecnica_indice','sql_parser.py',292),
+  ('tecnica_indice -> SEQUENTIAL','tecnica_indice',1,'p_tecnica_indice','sql_parser.py',293),
 ]

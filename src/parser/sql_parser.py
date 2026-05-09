@@ -14,10 +14,10 @@ if __package__ in (None, ""):
         if _p not in sys.path:
             sys.path.insert(0, _p)
 
-    from src.parser.sql_lexer import tokens
+    from src.parser.sql_lexer import tokens, LexError
     from src.executor import Executor
 else:
-    from .sql_lexer import tokens
+    from .sql_lexer import tokens, LexError
     from ..executor import Executor
 
 class SQLParser:
@@ -28,6 +28,8 @@ class SQLParser:
         # Backend de ejecución (catálogo, índices, sequential file). Lo mantenemos
         # como singleton para que el estado persista entre llamadas a run().
         self._executor = Executor()
+        # Detalle del último error de sintaxis (capturado por p_error).
+        self._last_syntax_error: str | None = None
 
     def _resolve_path(self, raw_path):
         candidate = Path(raw_path)
@@ -55,9 +57,14 @@ class SQLParser:
         """Parsea y ejecuta. Delega cada AST al Executor (catálogo + índices
         + sequential file). Devuelve una lista de resultados, uno por sentencia,
         con la misma forma para todas las operaciones (status/op/...)."""
-        asts = self.parser.parse(query)
+        self._last_syntax_error = None
+        try:
+            asts = self.parser.parse(query)
+        except LexError as e:
+            return [{"status": "error", "msg": f"Error léxico: {e}"}]
         if asts is None:
-            return [{"status": "error", "msg": "Sintaxis inválida o consulta vacía"}]
+            detalle = self._last_syntax_error or "consulta vacía o gramática no reconocida"
+            return [{"status": "error", "msg": f"Sintaxis inválida: {detalle}"}]
         return [self._executor.execute(ast) for ast in asts]
 
     # --- REGLAS DE LA GRAMÁTICA ---
@@ -96,6 +103,20 @@ class SQLParser:
             "csv_path": csv_path,
         }
 
+    def p_sentencia_create_file_con_n(self, p):
+        """
+        sentencia : CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE STRING WITH N EQUALS NUMBER
+        """
+        # CREATE TABLE airbnb20k (...) FROM FILE 'airbnb_database.csv' WITH N=20000
+        csv_path = str(self._resolve_path(p[9]))
+        p[0] = {
+            "tipo_operacion": "CREATE_TABLE",
+            "tabla": p[3].lower(),
+            "columnas": p[5],
+            "csv_path": csv_path,
+            "n_rows": int(p[13]),
+        }
+
     def p_sentencia_create_file_sin_archivos(self, p):
         """
         sentencia : CREATE TABLE ID LPAREN lista_columnas RPAREN
@@ -104,6 +125,30 @@ class SQLParser:
             "tipo_operacion": "CREATE_TABLE",
             "tabla": p[3].lower(),
             "columnas": p[5],
+        }
+
+    def p_sentencia_show_tables(self, p):
+        """
+        sentencia : SHOW TABLES
+        """
+        p[0] = {"tipo_operacion": "SHOW_TABLES"}
+
+    def p_sentencia_view_indices(self, p):
+        """
+        sentencia : VIEW INDICES FROM ID
+        """
+        p[0] = {
+            "tipo_operacion": "VIEW_INDICES",
+            "tabla": p[4].lower(),
+        }
+
+    def p_sentencia_drop_table(self, p):
+        """
+        sentencia : DROP TABLE ID
+        """
+        p[0] = {
+            "tipo_operacion": "DROP_TABLE",
+            "tabla": p[3].lower(),
         }
 
     # 1. SELECT * de Búsqueda Puntual (Point Query)
@@ -295,7 +340,13 @@ class SQLParser:
         """
         p[0] = p[1].upper()
     def p_error(self, p):
-        print(f"Error de sintaxis en: {p.value if p else 'Fin de archivo'}")
+        if p is None:
+            detalle = "fin de archivo inesperado (¿falta `;`?)"
+        else:
+            detalle = (f"token inesperado {p.type!r} = {p.value!r}"
+                       f" en línea {getattr(p, 'lineno', '?')}")
+        self._last_syntax_error = detalle
+        print(f"Error de sintaxis: {detalle}")
 
 # Pruebas rápidas
 if __name__ == "__main__":

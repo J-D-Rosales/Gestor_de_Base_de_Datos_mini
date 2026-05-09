@@ -13,12 +13,13 @@ from src.indices.base_index import BaseIndex
 from src.buffer_manager import BufferManager
 
 class ExtendibleHashing(BaseIndex):
-    def __init__(self, table_name, index_name, key_type, key_size=30, page_size=4096):
+    def __init__(self, table_name, index_name, key_type, key_size=30, page_size=4096,
+                 filepath: str = None):
         super().__init__(table_name)
         self.index_name = index_name
         self.key_type = key_type.upper()
         self.page_size = page_size
-        
+
         if self.key_type in ["INT"]:
             self.key_fmt = 'i'
             self.k_size = 4
@@ -34,15 +35,28 @@ class ExtendibleHashing(BaseIndex):
         # Registro: Llave + Puntero (int 4 bytes)
         self.record_format = f"={self.key_fmt}i"
         self.record_size = struct.calcsize(self.record_format)
-        
+
         # Header: local_depth(i), count(i), next_overflow(i) = 12 bytes
         self.header_size = 12
         self.max_records = (self.page_size - self.header_size) // self.record_size
 
         # 2. Archivos y Buffer
-        if not os.path.exists("data"): os.makedirs("data")
-        self.data_file = f"data/{index_name}.dat"
-        self.dir_file = f"data/{index_name}_dir.dat"
+        if filepath is None:
+            # Backwards-compat: ubicación legacy si nadie inyecta el path.
+            if not os.path.exists("data"):
+                os.makedirs("data")
+            self.data_file = f"data/{index_name}.dat"
+            self.dir_file = f"data/{index_name}_dir.dat"
+        else:
+            parent = os.path.dirname(filepath)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            self.data_file = filepath
+            # `<path>.dat` → `<path>_dir.dat`; en general `<path>` → `<path>_dir`.
+            if filepath.endswith(".dat"):
+                self.dir_file = filepath[:-4] + "_dir.dat"
+            else:
+                self.dir_file = filepath + "_dir"
         self.buffer = BufferManager(self.data_file, self.page_size)
         
         self.global_depth = 1

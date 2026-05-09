@@ -64,6 +64,8 @@ class TableMetadata:
     indices: dict[str, IndexInfo] = field(default_factory=dict)
     csv_path: str | None = None
     backend: str = "memory"
+    n_rows: int = 0
+    n_rows_limit: int | None = None
 
     def col_index(self, col_name: str) -> int:
         for i, c in enumerate(self.columnas):
@@ -106,6 +108,9 @@ class Catalog:
 
     def register(self, meta: TableMetadata):
         self._tables[meta.name] = meta
+
+    def unregister(self, name: str) -> TableMetadata | None:
+        return self._tables.pop(name.lower(), None)
 
     def get(self, name: str) -> TableMetadata | None:
         return self._tables.get(name.lower())
@@ -389,6 +394,9 @@ class Executor:
             "SELECT_SPATIAL_RADIUS": self._select_spatial,
             "SELECT_SPATIAL_KNN":    self._select_spatial,
             "DELETE":                self._delete,
+            "SHOW_TABLES":           self._show_tables,
+            "VIEW_INDICES":          self._view_indices,
+            "DROP_TABLE":            self._drop_table,
         }.get(op)
         if handler is None:
             return {"status": "error", "msg": f"Operación no soportada: {op}"}
@@ -399,12 +407,14 @@ class Executor:
         name = stmt["tabla"]
         cols = stmt["columnas"]
         fmt  = _record_format(cols)
+        n_limit = stmt.get("n_rows")
         meta = TableMetadata(
             name=name,
             columnas=cols,
             record_format=fmt,
             record_size=struct.calcsize(fmt),
             csv_path=stmt.get("csv_path"),
+            n_rows_limit=int(n_limit) if n_limit is not None else None,
         )
 
         if meta.csv_path and _REAL_BACKEND:
@@ -422,6 +432,8 @@ class Executor:
             "record_size": meta.record_size,
             "indices": {k: v.tipo for k, v in meta.indices.items()},
             "backend": meta.backend,
+            "n_rows": meta.n_rows,
+            "n_rows_limit": meta.n_rows_limit,
         }
 
     def _init_memory_backend(self, meta: TableMetadata):
@@ -485,15 +497,21 @@ class Executor:
         self._storage[meta.name] = _RealHeapAdapter(heap)
         meta.backend = "real"
 
+        limit = meta.n_rows_limit
+        loaded = 0
         with open(csv_path, "r", encoding="utf-8", newline="") as f:
             reader = _csv.reader(f)
             next(reader, None)  # header
             for row in reader:
                 if not row:
                     continue
+                if limit is not None and loaded >= limit:
+                    break
                 values = self._parse_csv_row(row, data_cols)
                 if values is not None:
                     heap.add(values)
+                    loaded += 1
+        meta.n_rows = loaded
 
         for c in meta.columnas:
             indice = c.get("indice")
@@ -505,7 +523,7 @@ class Executor:
             if indice == "SEQUENTIAL":
                 if tipo not in ("INT", "VARCHAR", "STR"):
                     continue
-                idx_path = os.path.join(table_dir, f"idx_{c['nombre']}.seqidx")
+                idx_path = os.path.join(table_dir, f"sequential_{c['nombre']}.seqidx")
                 for p in (idx_path, idx_path + ".aux"):
                     if os.path.exists(p):
                         os.remove(p)
@@ -523,7 +541,7 @@ class Executor:
             elif indice == "BTREE":
                 if tipo not in ("INT", "VARCHAR", "STR"):
                     continue
-                idx_path = os.path.join(table_dir, f"idx_{c['nombre']}.bin")
+                idx_path = os.path.join(table_dir, f"btree_{c['nombre']}.bin")
                 if os.path.exists(idx_path):
                     os.remove(idx_path)
                 if tipo == "INT":
@@ -539,15 +557,15 @@ class Executor:
                 )
 
             elif indice == "HASH":
-
-                hash_data = os.path.join(_PROJECT_ROOT, "data", f"{idx_name}.dat")
-                hash_dir  = os.path.join(_PROJECT_ROOT, "data", f"{idx_name}_dir.dat")
+                hash_data = os.path.join(table_dir, f"hash_{c['nombre']}.dat")
+                hash_dir  = os.path.join(table_dir, f"hash_{c['nombre']}_dir.dat")
                 for p in (hash_data, hash_dir):
                     if os.path.exists(p):
                         os.remove(p)
                 key_type = "INT" if tipo == "INT" else ("FLOAT" if tipo == "FLOAT" else "STR")
                 key_size = _AIRBNB_KEY_SIZE.get(c["nombre"], 50)
-                h = _RealHash(meta.name, idx_name, key_type, key_size=key_size)
+                h = _RealHash(meta.name, idx_name, key_type, key_size=key_size,
+                              filepath=hash_data)
                 meta.indices[c["nombre"]] = IndexInfo(
                     tipo="HASH",
                     instancia=_RealHashAdapter(h),
@@ -788,6 +806,121 @@ class Executor:
                 "disk_accesses": disk,
                 "execution_time_ms": round((time.time() - t0) * 1000, 3),
                 "indice_tipo": info.tipo}
+
+    def _show_tables(self, stmt):
+        t0 = time.time()
+        filas = []
+        for name in self.catalog.names():
+            meta = self.catalog.get(name)
+            if meta is None:
+                continue
+            indices = ", ".join(
+                f"{col}:{info.tipo}" for col, info in meta.indices.items()
+            ) or "-"
+            filas.append([
+                meta.name,
+                len(meta.columnas),
+                meta.n_rows,
+                indices,
+                meta.backend,
+            ])
+        return {
+            "status": "ok",
+            "op": "SHOW_TABLES",
+            "columnas": ["tabla", "n_columnas", "n_filas", "indices", "backend"],
+            "filas": filas,
+            "n": len(filas),
+            "disk_accesses": 0,
+            "execution_time_ms": round((time.time() - t0) * 1000, 3),
+            "indice_tipo": None,
+        }
+
+    def _drop_table(self, stmt):
+        import shutil
+        name = stmt["tabla"]
+        meta = self.catalog.get(name)
+        if meta is None:
+            return {"status": "error", "msg": f"tabla inexistente: {name}"}
+
+        t0 = time.time()
+        # Cerrar todos los buffers abiertos para liberar los archivos.
+        self._close_existing_table(name)
+
+        eliminados = []
+        # Carpeta principal de la tabla (heap + todos los índices del nuevo layout).
+        table_dir = os.path.join(self.data_dir, "tables", meta.name)
+        if os.path.isdir(table_dir):
+            try:
+                shutil.rmtree(table_dir)
+                eliminados.append(table_dir)
+            except OSError as e:
+                return {"status": "error",
+                        "msg": f"no se pudo eliminar {table_dir}: {e}"}
+
+        # Compatibilidad: limpiar artefactos legacy del HASH y RTREE que
+        # podrían haber quedado fuera del per-table dir en versiones previas.
+        for col_name, info in meta.indices.items():
+            idx_name = f"{meta.name}_{col_name}"
+            legacy_paths = []
+            if info.tipo == "HASH":
+                legacy_paths += [
+                    os.path.join(_PROJECT_ROOT, "data", f"{idx_name}.dat"),
+                    os.path.join(_PROJECT_ROOT, "data", f"{idx_name}_dir.dat"),
+                ]
+            if info.tipo == "RTREE":
+                legacy_paths += [
+                    os.path.join(_BASE, "data", f"{meta.name}_rtree.idx"),
+                ]
+            for p in legacy_paths:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                        eliminados.append(p)
+                    except OSError:
+                        pass
+
+        self._storage.pop(meta.name, None)
+        self.catalog.unregister(meta.name)
+
+        return {
+            "status": "ok",
+            "op": "DROP_TABLE",
+            "tabla": meta.name,
+            "archivos_eliminados": eliminados,
+            "disk_accesses": 0,
+            "execution_time_ms": round((time.time() - t0) * 1000, 3),
+            "indice_tipo": None,
+        }
+
+    def _view_indices(self, stmt):
+        meta = self.catalog.get(stmt["tabla"])
+        if meta is None:
+            return {"status": "error", "msg": f"tabla inexistente: {stmt['tabla']}"}
+        t0 = time.time()
+        filas = []
+        for c in meta.columnas:
+            info = meta.indices.get(c["nombre"])
+            tipo_idx = info.tipo if info is not None else "-"
+            extra = ""
+            if info is not None and info.rtree_cols:
+                extra = f"({', '.join(info.rtree_cols)})"
+            filas.append([
+                c["nombre"],
+                c["tipo"],
+                tipo_idx + (" " + extra if extra else ""),
+            ])
+        return {
+            "status": "ok",
+            "op": "VIEW_INDICES",
+            "tabla": meta.name,
+            "columnas": ["columna", "tipo_dato", "indice"],
+            "filas": filas,
+            "n": len(filas),
+            "disk_accesses": 0,
+            "execution_time_ms": round((time.time() - t0) * 1000, 3),
+            "indice_tipo": None,
+        }
+
 
 if __name__ == "__main__":
     print(f"[backend real disponible: {_REAL_BACKEND}]")

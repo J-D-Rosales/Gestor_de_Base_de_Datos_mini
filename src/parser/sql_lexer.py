@@ -29,7 +29,16 @@ reserved = {
     'INSERT': 'INSERT',
     'INTO': 'INTO',
     'VALUES': 'VALUES',
-    'DELETE': 'DELETE'
+    'DELETE': 'DELETE',
+    # --- Carga parametrizada ---
+    'WITH': 'WITH',
+    'N': 'N',
+    # --- Metadata / catálogo ---
+    'SHOW': 'SHOW',
+    'TABLES': 'TABLES',
+    'VIEW': 'VIEW',
+    'INDICES': 'INDICES',
+    'DROP': 'DROP',
 }
 
 # 2. Lista de todos los tokens
@@ -67,10 +76,15 @@ def t_ID(t):
     # Verifica si es palabra reservada, si no, es un ID normal (ej. nombre de tabla)
     t.type = reserved.get(t.value.upper(), 'ID')
     return t
+class LexError(Exception):
+    """Error léxico capturable por el SQLParser para mostrarlo en el UI."""
+    pass
+
+
 # 7. Manejo de errores
 def t_error(t):
-    print(f"Error Léxico: Carácter ilegal '{t.value[0]}'")
-    t.lexer.skip(1)
+    raise LexError(f"carácter ilegal {t.value[0]!r} en línea "
+                   f"{getattr(t, 'lineno', '?')}")
 
 def t_NUMBER(t):
     r'-?\d+(\.\d+)?' # Atrapa enteros/decimales positivos y negativos

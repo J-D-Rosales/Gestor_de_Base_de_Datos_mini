@@ -18,15 +18,13 @@ NO_NEXT = -1
 
 
 class SequentialIndex(BaseIndex):
-    DEFAULT_REBUILD_THRESHOLD = 64
 
     def __init__(self, table_name, idx_name, key_type="INT", key_size=50,
-                 filepath=None, rebuild_threshold=DEFAULT_REBUILD_THRESHOLD):
+                 filepath=None, rebuild_threshold=None):
         super().__init__(table_name)
         self.idx_name = idx_name
         self.key_type = (key_type or "INT").upper()
         self.key_size = int(key_size) if self.key_type == "STR" else 0
-        self.K = rebuild_threshold
 
         if self.key_type == "INT":
             self._key_fmt = "i"
@@ -130,14 +128,13 @@ class SequentialIndex(BaseIndex):
         n_main = self._file_count(self.main)
         n_aux = self._file_count(self.aux)
         
-        if n_main == 0:
-            dynamic_k = 1000
-        else:
-            dynamic_k = n_main * 0.10
+        # Umbral dinámico: 10% del archivo principal, mínimo 1000 registros
+        dynamic_threshold = max(1000, n_main // 10)
         
         self._write_entry(self.aux, n_aux, key, page_id_value, slot_id_value)
 
-        if (n_aux + 1) > dynamic_k:
+        # Reconstruir si el archivo auxiliar excede el umbral dinámico
+        if (n_aux + 1) >= dynamic_threshold:
             self._rebuild()
 
         return self._format_result(

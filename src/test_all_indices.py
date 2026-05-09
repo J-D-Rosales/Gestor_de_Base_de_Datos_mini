@@ -40,7 +40,7 @@ def run_test():
     reads = {n: {"B+Tree": {}, "Secuencial": {}, "Hash Ext.": {}, "R-Tree": {}} for n in N_VALUES}
 
     for n in N_VALUES:
-        print(f"\n{'='*50}\n🚀 INICIANDO PRUEBAS PARA N = {n}\n{'='*50}")
+        print(f"\n{'='*50}\n INICIANDO PRUEBAS PARA N = {n}\n{'='*50}")
         
         # 1. BTree, Secuencial, Hash
         for label, index_type in INDEX_CONFIG.items():
@@ -102,21 +102,25 @@ def run_test():
             times[n]["R-Tree"]["KNN"] = "Error"
             reads[n]["R-Tree"]["KNN"] = "Error"
 
-    # --- IMPRIMIR TABLAS ---
-    def print_table(title, columns, op_key):
-        print(f"\n{'#'*80}\n{title}\n{'#'*80}")
+# --- IMPRIMIR TABLAS ---
+    def print_table(title, columns, op_key, data_dict):
+        print(f"\n{'#'*85}\n{title}\n{'#'*85}")
         header = f"{'N Registros':<12} | " + " | ".join([f"{col:<15}" for col in columns])
         print(header)
         print("-" * len(header))
         for n in N_VALUES:
-            row = f"{n:<12} | " + " | ".join([f"{str(times[n][col].get(op_key, '-')):<15}" for col in columns])
+            row = f"{n:<12} | " + " | ".join([f"{str(data_dict[n][col].get(op_key, '-')):<15}" for col in columns])
             print(row)
 
-    print_table("TABLA 1: BÚSQUEDA POR RANGO (ms) [B+Tree y Secuencial]", ["B+Tree", "Secuencial"], "Range")
-    print_table("TABLA 2: INSERCIÓN INDIVIDUAL (ms) [Todos los Índices]", ["B+Tree", "Secuencial", "Hash Ext.", "R-Tree"], "Insert")
-    print_table("TABLA 3: BÚSQUEDA KNN (ms) [Solo R-Tree]", ["R-Tree"], "KNN")
-
-    print("\n\n(Para Accesos a Disco I/O, el formato es idéntico pero leyendo el diccionario 'reads')")
+    print("\n\n" + "="*85 + "\nTIEMPOS DE EJECUCIÓN (ms)\n" + "="*85)
+    print_table("TABLA 1: BÚSQUEDA POR RANGO (ms) [B+Tree y Secuencial]", ["B+Tree", "Secuencial"], "Range", times)
+    print_table("TABLA 2: INSERCIÓN INDIVIDUAL (ms) [Todos los Índices]", ["B+Tree", "Secuencial", "Hash Ext.", "R-Tree"], "Insert", times)
+    print_table("TABLA 3: BÚSQUEDA KNN (ms) [Solo R-Tree]", ["R-Tree"], "KNN", times)
+    
+    print("\n\n" + "="*85 + "\nACCESOS A DISCO (I/O)\n" + "="*85)
+    print_table("TABLA 4: ACCESOS A DISCO (I/O) - BÚSQUEDA POR RANGO", ["B+Tree", "Secuencial"], "Range", reads)
+    print_table("TABLA 5: ACCESOS A DISCO (I/O) - INSERCIÓN INDIVIDUAL", ["B+Tree", "Secuencial", "Hash Ext.", "R-Tree"], "Insert", reads)
+    print_table("TABLA 6: ACCESOS A DISCO (I/O) - BÚSQUEDA KNN [Solo R-Tree]", ["R-Tree"], "KNN", reads)
 
 if __name__ == "__main__":
     run_test()

@@ -16,15 +16,16 @@ for _p in (_PROJECT_ROOT, _BASE, os.path.join(_BASE, "indices")):
         sys.path.insert(0, _p)
 
 try:
-    from indices.bplus_tree import BPlusTreeIndex as _RealBPlusTree
-    from indices.heap_file import HeapFile as _RealHeapFile
-    from indices.sequential_index import SequentialIndex as _RealSequentialIndex
-    from indices.extendible_hashing import ExtendibleHashing as _RealHash
-    from indices.r_tree import RTree as _RealRTree
+    from src.indices.bplus_tree import BPlusTreeIndex as _RealBPlusTree
+    from src.indices.heap_file import HeapFile as _RealHeapFile
+    from src.indices.sequential_index import SequentialIndex as _RealSequentialIndex
+    from src.indices.extendible_hashing import ExtendibleHashing as _RealHash
+    from src.indices.r_tree import RTree as _RealRTree
     _REAL_BACKEND = True
 except Exception as _e:
     _REAL_BACKEND = False
     _IMPORT_ERROR = _e
+    print(f"\n[!] ADVERTENCIA CRÍTICA: Fallo al cargar backend real de índices: {_e}\n")
 
 
 _TYPE_TO_FORMAT = {
@@ -39,7 +40,13 @@ _AIRBNB_KEY_SIZE = {
 }
 
 def _record_format(columnas: list[dict]) -> str:
-    return "=" + "".join(_TYPE_TO_FORMAT.get(c["tipo"], "50s") for c in columnas)
+    parts = []
+    for c in columnas:
+        tipo = (c.get("tipo") or "").upper()
+        if tipo == "POINT":
+            continue
+        parts.append(_TYPE_TO_FORMAT.get(tipo, "50s"))
+    return "=" + "".join(parts)
 
 @dataclass
 class IndexInfo:
@@ -76,6 +83,21 @@ class TableMetadata:
                 return i
             i += 1
         return -1
+
+    def rtree_columns_for(self, col_name: str) -> list[str] | None:
+        for c in self.columnas:
+            if c["nombre"] != col_name:
+                continue
+            cols = c.get("rtree_cols") or []
+            if len(cols) == 2:
+                return list(cols)
+            if (c.get("tipo") or "").upper() == "POINT":
+                lat = self.col_index("lat")
+                long_ = self.col_index("long")
+                if lat >= 0 and long_ >= 0:
+                    return ["lat", "long"]
+            return None
+        return None
 
 
 class Catalog:
@@ -407,7 +429,7 @@ class Executor:
             if c.get("indice") in ("BTREE", "HASH", "RTREE", "SEQUENTIAL"):
                 meta.indices[c["nombre"]] = IndexInfo(
                     tipo=c["indice"],
-                    rtree_cols=c.get("rtree_cols"),
+                    rtree_cols=meta.rtree_columns_for(c["nombre"]),
                     instancia=_MemoryIndex(),
                 )
         self._storage[meta.name] = _MemorySequentialFile(meta.name)
@@ -532,8 +554,8 @@ class Executor:
                 )
 
             elif indice == "RTREE":
-                rtree_cols = c.get("rtree_cols") or []
-                if len(rtree_cols) != 2:
+                rtree_cols = meta.rtree_columns_for(c["nombre"])
+                if not rtree_cols or len(rtree_cols) != 2:
                     continue
                 rtree_path = os.path.join(_BASE, "data", f"{meta.name}_rtree.idx")
                 if os.path.exists(rtree_path):
@@ -548,7 +570,7 @@ class Executor:
         for pid, sid, values in self._storage[meta.name].iter_records():
             for col_name, info in meta.indices.items():
                 if info.tipo == "RTREE":
-                    cols = info.rtree_cols or []
+                    cols = info.rtree_cols or meta.rtree_columns_for(col_name) or []
                     if len(cols) != 2:
                         continue
                     i_x, i_y = meta.data_col_index(cols[0]), meta.data_col_index(cols[1])
@@ -606,7 +628,7 @@ class Executor:
             if info.instancia is None:
                 continue
             if info.tipo == "RTREE":
-                cols = info.rtree_cols or []
+                cols = info.rtree_cols or meta.rtree_columns_for(col_name) or []
                 if len(cols) != 2:
                     continue
                 i_x, i_y = meta.data_col_index(cols[0]), meta.data_col_index(cols[1])
@@ -709,7 +731,7 @@ class Executor:
             return {"status": "error", "msg": f"op espacial desconocida: {op}"}
         disk = self._metrics_of(info.instancia)[0]
 
-        rcols = info.rtree_cols or []
+        rcols = info.rtree_cols or meta.rtree_columns_for(col) or []
         i_x = meta.data_col_index(rcols[0]) if len(rcols) >= 1 else -1
         i_y = meta.data_col_index(rcols[1]) if len(rcols) >= 2 else -1
 

@@ -21,7 +21,7 @@ INDEX_CONFIG = {
 def create_table_sql(table_name, n, index_type):
     csv_path = str(_current_dir / "data" / "bench" / f"airbnb_{n}.csv")
     if index_type == "RTREE":
-        return f"CREATE TABLE {table_name} (id INT, name VARCHAR, city VARCHAR, ubicacion FLOAT INDEX RTREE, long FLOAT, price FLOAT, room_type VARCHAR, accommodates INT) FROM FILE '{csv_path}';"
+        return f"CREATE TABLE {table_name} (id INT, name VARCHAR, city VARCHAR, lat FLOAT, long FLOAT, price FLOAT, room_type VARCHAR, accommodates INT, ubicacion POINT INDEX RTREE) FROM FILE '{csv_path}';"
     else:
         return f"CREATE TABLE {table_name} (id INT INDEX {index_type}, name VARCHAR, city VARCHAR, lat FLOAT, long FLOAT, price FLOAT, room_type VARCHAR, accommodates INT) FROM FILE '{csv_path}';"
 

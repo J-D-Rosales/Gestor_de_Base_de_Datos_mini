@@ -1,14 +1,16 @@
 import struct
 import time
 import os
+import sys
 import hashlib
+from pathlib import Path
 
-try:
-    from .base_index import BaseIndex
-    from ..buffer_manager import BufferManager
-except ImportError:
-    from base_index import BaseIndex
-    from buffer_manager import BufferManager
+_project_root = str(Path(__file__).resolve().parents[2])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from src.indices.base_index import BaseIndex
+from src.buffer_manager import BufferManager
 
 class ExtendibleHashing(BaseIndex):
     def __init__(self, table_name, index_name, key_type, key_size=30, page_size=4096):

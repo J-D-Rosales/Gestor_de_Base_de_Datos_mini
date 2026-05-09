@@ -281,6 +281,7 @@ class SQLParser:
                   | FLOAT
                   | VARCHAR
                   | STR
+                  | POINT
         """
         p[0] = p[1].upper()
 

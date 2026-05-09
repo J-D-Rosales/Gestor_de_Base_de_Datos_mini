@@ -1,15 +1,17 @@
 import struct
 import math
 import os
+import sys
 import time
 import heapq
+from pathlib import Path
 
-try:
-    from .base_index import BaseIndex
-    from ..buffer_manager import BufferManager
-except ImportError:
-    from base_index import BaseIndex
-    from buffer_manager import BufferManager
+_project_root = str(Path(__file__).resolve().parents[2])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from src.indices.base_index import BaseIndex
+from src.buffer_manager import BufferManager
 
 PAGE_SIZE = 4096
 HEADER_FMT = "<iiii"

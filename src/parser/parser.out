@@ -26,17 +26,18 @@ Rule 20    tipo_dato -> INT
 Rule 21    tipo_dato -> FLOAT
 Rule 22    tipo_dato -> VARCHAR
 Rule 23    tipo_dato -> STR
-Rule 24    tecnica_indice -> BTREE
-Rule 25    tecnica_indice -> RTREE
-Rule 26    tecnica_indice -> HASH
-Rule 27    tecnica_indice -> SEQUENTIAL
+Rule 24    tipo_dato -> POINT
+Rule 25    tecnica_indice -> BTREE
+Rule 26    tecnica_indice -> RTREE
+Rule 27    tecnica_indice -> HASH
+Rule 28    tecnica_indice -> SEQUENTIAL
 
 Terminals, with rules where they appear
 
 AND                  : 6
 ASTERISK             : 5 6 7 8
 BETWEEN              : 6
-BTREE                : 24
+BTREE                : 25
 COMMA                : 7 7 8 8 10 15 18
 CREATE               : 3 4
 DELETE               : 12
@@ -44,7 +45,7 @@ EQUALS               : 5 12
 FILE                 : 3
 FLOAT                : 21
 FROM                 : 3 5 6 7 8 12
-HASH                 : 26
+HASH                 : 27
 ID                   : 3 4 5 5 6 6 7 7 8 8 9 12 12 15 15 15 16 17
 IN                   : 7 8
 INDEX                : 15 16
@@ -54,13 +55,13 @@ INTO                 : 9
 K                    : 8
 LPAREN               : 3 4 7 7 8 8 9 15
 NUMBER               : 14
-POINT                : 7 8
+POINT                : 7 8 24
 RADIUS               : 7
 RPAREN               : 3 4 7 7 8 8 9 15
-RTREE                : 25
+RTREE                : 26
 SELECT               : 5 6 7 8
 SEMICOLON            : 1 2
-SEQUENTIAL           : 27
+SEQUENTIAL           : 28
 STR                  : 23
 STRING               : 3 13
 TABLE                : 3 4
@@ -304,11 +305,13 @@ state 22
     (21) tipo_dato -> . FLOAT
     (22) tipo_dato -> . VARCHAR
     (23) tipo_dato -> . STR
+    (24) tipo_dato -> . POINT
 
     INT             shift and go to state 29
     FLOAT           shift and go to state 30
     VARCHAR         shift and go to state 31
     STR             shift and go to state 32
+    POINT           shift and go to state 33
 
     tipo_dato                      shift and go to state 28
 
@@ -318,8 +321,8 @@ state 23
     (4) sentencia -> CREATE TABLE ID LPAREN lista_columnas . RPAREN
     (18) lista_columnas -> lista_columnas . COMMA columna
 
-    RPAREN          shift and go to state 33
-    COMMA           shift and go to state 34
+    RPAREN          shift and go to state 34
+    COMMA           shift and go to state 35
 
 
 state 24
@@ -337,7 +340,7 @@ state 25
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE . ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN
     (8) sentencia -> SELECT ASTERISK FROM ID WHERE . ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN
 
-    ID              shift and go to state 35
+    ID              shift and go to state 36
 
 
 state 26
@@ -348,17 +351,17 @@ state 26
     (13) valor -> . STRING
     (14) valor -> . NUMBER
 
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
 
-    lista_valores                  shift and go to state 36
-    valor                          shift and go to state 37
+    lista_valores                  shift and go to state 37
+    valor                          shift and go to state 38
 
 state 27
 
     (12) sentencia -> DELETE FROM ID WHERE ID . EQUALS valor
 
-    EQUALS          shift and go to state 40
+    EQUALS          shift and go to state 41
 
 
 state 28
@@ -367,7 +370,7 @@ state 28
     (16) columna -> ID tipo_dato . INDEX tecnica_indice
     (17) columna -> ID tipo_dato .
 
-    INDEX           shift and go to state 41
+    INDEX           shift and go to state 42
     RPAREN          reduce using rule 17 (columna -> ID tipo_dato .)
     COMMA           reduce using rule 17 (columna -> ID tipo_dato .)
 
@@ -410,14 +413,23 @@ state 32
 
 state 33
 
-    (3) sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN . FROM FILE STRING
-    (4) sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN .
+    (24) tipo_dato -> POINT .
 
-    FROM            shift and go to state 42
-    SEMICOLON       reduce using rule 4 (sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN .)
+    INDEX           reduce using rule 24 (tipo_dato -> POINT .)
+    RPAREN          reduce using rule 24 (tipo_dato -> POINT .)
+    COMMA           reduce using rule 24 (tipo_dato -> POINT .)
 
 
 state 34
+
+    (3) sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN . FROM FILE STRING
+    (4) sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN .
+
+    FROM            shift and go to state 43
+    SEMICOLON       reduce using rule 4 (sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN .)
+
+
+state 35
 
     (18) lista_columnas -> lista_columnas COMMA . columna
     (15) columna -> . ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA ID RPAREN
@@ -426,30 +438,30 @@ state 34
 
     ID              shift and go to state 22
 
-    columna                        shift and go to state 43
+    columna                        shift and go to state 44
 
-state 35
+state 36
 
     (5) sentencia -> SELECT ASTERISK FROM ID WHERE ID . EQUALS valor
     (6) sentencia -> SELECT ASTERISK FROM ID WHERE ID . BETWEEN valor AND valor
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID . IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN
     (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID . IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN
 
-    EQUALS          shift and go to state 44
-    BETWEEN         shift and go to state 45
-    IN              shift and go to state 46
+    EQUALS          shift and go to state 45
+    BETWEEN         shift and go to state 46
+    IN              shift and go to state 47
 
 
-state 36
+state 37
 
     (9) sentencia -> INSERT INTO ID VALUES LPAREN lista_valores . RPAREN
     (10) lista_valores -> lista_valores . COMMA valor
 
-    RPAREN          shift and go to state 47
-    COMMA           shift and go to state 48
+    RPAREN          shift and go to state 48
+    COMMA           shift and go to state 49
 
 
-state 37
+state 38
 
     (11) lista_valores -> valor .
 
@@ -457,7 +469,7 @@ state 37
     COMMA           reduce using rule 11 (lista_valores -> valor .)
 
 
-state 38
+state 39
 
     (13) valor -> STRING .
 
@@ -467,7 +479,7 @@ state 38
     AND             reduce using rule 13 (valor -> STRING .)
 
 
-state 39
+state 40
 
     (14) valor -> NUMBER .
 
@@ -477,41 +489,41 @@ state 39
     AND             reduce using rule 14 (valor -> NUMBER .)
 
 
-state 40
+state 41
 
     (12) sentencia -> DELETE FROM ID WHERE ID EQUALS . valor
     (13) valor -> . STRING
     (14) valor -> . NUMBER
 
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
 
-    valor                          shift and go to state 49
-
-state 41
-
-    (15) columna -> ID tipo_dato INDEX . tecnica_indice LPAREN ID COMMA ID RPAREN
-    (16) columna -> ID tipo_dato INDEX . tecnica_indice
-    (24) tecnica_indice -> . BTREE
-    (25) tecnica_indice -> . RTREE
-    (26) tecnica_indice -> . HASH
-    (27) tecnica_indice -> . SEQUENTIAL
-
-    BTREE           shift and go to state 51
-    RTREE           shift and go to state 52
-    HASH            shift and go to state 53
-    SEQUENTIAL      shift and go to state 54
-
-    tecnica_indice                 shift and go to state 50
+    valor                          shift and go to state 50
 
 state 42
 
-    (3) sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN FROM . FILE STRING
+    (15) columna -> ID tipo_dato INDEX . tecnica_indice LPAREN ID COMMA ID RPAREN
+    (16) columna -> ID tipo_dato INDEX . tecnica_indice
+    (25) tecnica_indice -> . BTREE
+    (26) tecnica_indice -> . RTREE
+    (27) tecnica_indice -> . HASH
+    (28) tecnica_indice -> . SEQUENTIAL
 
-    FILE            shift and go to state 55
+    BTREE           shift and go to state 52
+    RTREE           shift and go to state 53
+    HASH            shift and go to state 54
+    SEQUENTIAL      shift and go to state 55
 
+    tecnica_indice                 shift and go to state 51
 
 state 43
+
+    (3) sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN FROM . FILE STRING
+
+    FILE            shift and go to state 56
+
+
+state 44
 
     (18) lista_columnas -> lista_columnas COMMA columna .
 
@@ -519,137 +531,137 @@ state 43
     COMMA           reduce using rule 18 (lista_columnas -> lista_columnas COMMA columna .)
 
 
-state 44
+state 45
 
     (5) sentencia -> SELECT ASTERISK FROM ID WHERE ID EQUALS . valor
     (13) valor -> . STRING
     (14) valor -> . NUMBER
 
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
-
-    valor                          shift and go to state 56
-
-state 45
-
-    (6) sentencia -> SELECT ASTERISK FROM ID WHERE ID BETWEEN . valor AND valor
-    (13) valor -> . STRING
-    (14) valor -> . NUMBER
-
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
 
     valor                          shift and go to state 57
 
 state 46
 
+    (6) sentencia -> SELECT ASTERISK FROM ID WHERE ID BETWEEN . valor AND valor
+    (13) valor -> . STRING
+    (14) valor -> . NUMBER
+
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
+
+    valor                          shift and go to state 58
+
+state 47
+
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN . LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN
     (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN . LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN
 
-    LPAREN          shift and go to state 58
+    LPAREN          shift and go to state 59
 
 
-state 47
+state 48
 
     (9) sentencia -> INSERT INTO ID VALUES LPAREN lista_valores RPAREN .
 
     SEMICOLON       reduce using rule 9 (sentencia -> INSERT INTO ID VALUES LPAREN lista_valores RPAREN .)
 
 
-state 48
+state 49
 
     (10) lista_valores -> lista_valores COMMA . valor
     (13) valor -> . STRING
     (14) valor -> . NUMBER
 
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
 
-    valor                          shift and go to state 59
+    valor                          shift and go to state 60
 
-state 49
+state 50
 
     (12) sentencia -> DELETE FROM ID WHERE ID EQUALS valor .
 
     SEMICOLON       reduce using rule 12 (sentencia -> DELETE FROM ID WHERE ID EQUALS valor .)
 
 
-state 50
+state 51
 
     (15) columna -> ID tipo_dato INDEX tecnica_indice . LPAREN ID COMMA ID RPAREN
     (16) columna -> ID tipo_dato INDEX tecnica_indice .
 
-    LPAREN          shift and go to state 60
+    LPAREN          shift and go to state 61
     RPAREN          reduce using rule 16 (columna -> ID tipo_dato INDEX tecnica_indice .)
     COMMA           reduce using rule 16 (columna -> ID tipo_dato INDEX tecnica_indice .)
 
 
-state 51
-
-    (24) tecnica_indice -> BTREE .
-
-    LPAREN          reduce using rule 24 (tecnica_indice -> BTREE .)
-    RPAREN          reduce using rule 24 (tecnica_indice -> BTREE .)
-    COMMA           reduce using rule 24 (tecnica_indice -> BTREE .)
-
-
 state 52
 
-    (25) tecnica_indice -> RTREE .
+    (25) tecnica_indice -> BTREE .
 
-    LPAREN          reduce using rule 25 (tecnica_indice -> RTREE .)
-    RPAREN          reduce using rule 25 (tecnica_indice -> RTREE .)
-    COMMA           reduce using rule 25 (tecnica_indice -> RTREE .)
+    LPAREN          reduce using rule 25 (tecnica_indice -> BTREE .)
+    RPAREN          reduce using rule 25 (tecnica_indice -> BTREE .)
+    COMMA           reduce using rule 25 (tecnica_indice -> BTREE .)
 
 
 state 53
 
-    (26) tecnica_indice -> HASH .
+    (26) tecnica_indice -> RTREE .
 
-    LPAREN          reduce using rule 26 (tecnica_indice -> HASH .)
-    RPAREN          reduce using rule 26 (tecnica_indice -> HASH .)
-    COMMA           reduce using rule 26 (tecnica_indice -> HASH .)
+    LPAREN          reduce using rule 26 (tecnica_indice -> RTREE .)
+    RPAREN          reduce using rule 26 (tecnica_indice -> RTREE .)
+    COMMA           reduce using rule 26 (tecnica_indice -> RTREE .)
 
 
 state 54
 
-    (27) tecnica_indice -> SEQUENTIAL .
+    (27) tecnica_indice -> HASH .
 
-    LPAREN          reduce using rule 27 (tecnica_indice -> SEQUENTIAL .)
-    RPAREN          reduce using rule 27 (tecnica_indice -> SEQUENTIAL .)
-    COMMA           reduce using rule 27 (tecnica_indice -> SEQUENTIAL .)
+    LPAREN          reduce using rule 27 (tecnica_indice -> HASH .)
+    RPAREN          reduce using rule 27 (tecnica_indice -> HASH .)
+    COMMA           reduce using rule 27 (tecnica_indice -> HASH .)
 
 
 state 55
 
-    (3) sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE . STRING
+    (28) tecnica_indice -> SEQUENTIAL .
 
-    STRING          shift and go to state 61
+    LPAREN          reduce using rule 28 (tecnica_indice -> SEQUENTIAL .)
+    RPAREN          reduce using rule 28 (tecnica_indice -> SEQUENTIAL .)
+    COMMA           reduce using rule 28 (tecnica_indice -> SEQUENTIAL .)
 
 
 state 56
+
+    (3) sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE . STRING
+
+    STRING          shift and go to state 62
+
+
+state 57
 
     (5) sentencia -> SELECT ASTERISK FROM ID WHERE ID EQUALS valor .
 
     SEMICOLON       reduce using rule 5 (sentencia -> SELECT ASTERISK FROM ID WHERE ID EQUALS valor .)
 
 
-state 57
+state 58
 
     (6) sentencia -> SELECT ASTERISK FROM ID WHERE ID BETWEEN valor . AND valor
 
-    AND             shift and go to state 62
+    AND             shift and go to state 63
 
 
-state 58
+state 59
 
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN . POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN
     (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN . POINT LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN
 
-    POINT           shift and go to state 63
+    POINT           shift and go to state 64
 
 
-state 59
+state 60
 
     (10) lista_valores -> lista_valores COMMA valor .
 
@@ -657,100 +669,100 @@ state 59
     COMMA           reduce using rule 10 (lista_valores -> lista_valores COMMA valor .)
 
 
-state 60
+state 61
 
     (15) columna -> ID tipo_dato INDEX tecnica_indice LPAREN . ID COMMA ID RPAREN
 
-    ID              shift and go to state 64
+    ID              shift and go to state 65
 
 
-state 61
+state 62
 
     (3) sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE STRING .
 
     SEMICOLON       reduce using rule 3 (sentencia -> CREATE TABLE ID LPAREN lista_columnas RPAREN FROM FILE STRING .)
 
 
-state 62
+state 63
 
     (6) sentencia -> SELECT ASTERISK FROM ID WHERE ID BETWEEN valor AND . valor
     (13) valor -> . STRING
     (14) valor -> . NUMBER
 
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
 
-    valor                          shift and go to state 65
+    valor                          shift and go to state 66
 
-state 63
+state 64
 
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT . LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN
     (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT . LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN
 
-    LPAREN          shift and go to state 66
-
-
-state 64
-
-    (15) columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID . COMMA ID RPAREN
-
-    COMMA           shift and go to state 67
+    LPAREN          shift and go to state 67
 
 
 state 65
+
+    (15) columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID . COMMA ID RPAREN
+
+    COMMA           shift and go to state 68
+
+
+state 66
 
     (6) sentencia -> SELECT ASTERISK FROM ID WHERE ID BETWEEN valor AND valor .
 
     SEMICOLON       reduce using rule 6 (sentencia -> SELECT ASTERISK FROM ID WHERE ID BETWEEN valor AND valor .)
 
 
-state 66
+state 67
 
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN . valor COMMA valor RPAREN COMMA RADIUS valor RPAREN
     (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN . valor COMMA valor RPAREN COMMA K valor RPAREN
     (13) valor -> . STRING
     (14) valor -> . NUMBER
 
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
 
-    valor                          shift and go to state 68
-
-state 67
-
-    (15) columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA . ID RPAREN
-
-    ID              shift and go to state 69
-
+    valor                          shift and go to state 69
 
 state 68
 
-    (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor . COMMA valor RPAREN COMMA RADIUS valor RPAREN
-    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor . COMMA valor RPAREN COMMA K valor RPAREN
+    (15) columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA . ID RPAREN
 
-    COMMA           shift and go to state 70
+    ID              shift and go to state 70
 
 
 state 69
 
-    (15) columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA ID . RPAREN
+    (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor . COMMA valor RPAREN COMMA RADIUS valor RPAREN
+    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor . COMMA valor RPAREN COMMA K valor RPAREN
 
-    RPAREN          shift and go to state 71
+    COMMA           shift and go to state 71
 
 
 state 70
+
+    (15) columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA ID . RPAREN
+
+    RPAREN          shift and go to state 72
+
+
+state 71
 
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA . valor RPAREN COMMA RADIUS valor RPAREN
     (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA . valor RPAREN COMMA K valor RPAREN
     (13) valor -> . STRING
     (14) valor -> . NUMBER
 
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
 
-    valor                          shift and go to state 72
+    valor                          shift and go to state 73
 
-state 71
+state 72
 
     (15) columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA ID RPAREN .
 
@@ -758,75 +770,75 @@ state 71
     COMMA           reduce using rule 15 (columna -> ID tipo_dato INDEX tecnica_indice LPAREN ID COMMA ID RPAREN .)
 
 
-state 72
+state 73
 
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor . RPAREN COMMA RADIUS valor RPAREN
     (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor . RPAREN COMMA K valor RPAREN
 
-    RPAREN          shift and go to state 73
-
-
-state 73
-
-    (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN . COMMA RADIUS valor RPAREN
-    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN . COMMA K valor RPAREN
-
-    COMMA           shift and go to state 74
+    RPAREN          shift and go to state 74
 
 
 state 74
 
-    (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA . RADIUS valor RPAREN
-    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA . K valor RPAREN
+    (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN . COMMA RADIUS valor RPAREN
+    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN . COMMA K valor RPAREN
 
-    RADIUS          shift and go to state 75
-    K               shift and go to state 76
+    COMMA           shift and go to state 75
 
 
 state 75
+
+    (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA . RADIUS valor RPAREN
+    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA . K valor RPAREN
+
+    RADIUS          shift and go to state 76
+    K               shift and go to state 77
+
+
+state 76
 
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS . valor RPAREN
     (13) valor -> . STRING
     (14) valor -> . NUMBER
 
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
-
-    valor                          shift and go to state 77
-
-state 76
-
-    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K . valor RPAREN
-    (13) valor -> . STRING
-    (14) valor -> . NUMBER
-
-    STRING          shift and go to state 38
-    NUMBER          shift and go to state 39
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
 
     valor                          shift and go to state 78
 
 state 77
 
-    (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor . RPAREN
+    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K . valor RPAREN
+    (13) valor -> . STRING
+    (14) valor -> . NUMBER
 
-    RPAREN          shift and go to state 79
+    STRING          shift and go to state 39
+    NUMBER          shift and go to state 40
 
+    valor                          shift and go to state 79
 
 state 78
 
-    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor . RPAREN
+    (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor . RPAREN
 
     RPAREN          shift and go to state 80
 
 
 state 79
 
+    (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor . RPAREN
+
+    RPAREN          shift and go to state 81
+
+
+state 80
+
     (7) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN .
 
     SEMICOLON       reduce using rule 7 (sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA RADIUS valor RPAREN .)
 
 
-state 80
+state 81
 
     (8) sentencia -> SELECT ASTERISK FROM ID WHERE ID IN LPAREN POINT LPAREN valor COMMA valor RPAREN COMMA K valor RPAREN .
 

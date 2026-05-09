@@ -1,6 +1,12 @@
 import struct
+import sys
+from pathlib import Path
 
-from buffer_manager import BufferManager
+_project_root = str(Path(__file__).resolve().parents[2])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from src.buffer_manager import BufferManager
 
 
 class HeapFile:

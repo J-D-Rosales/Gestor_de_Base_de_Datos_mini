@@ -31,4 +31,7 @@ frontend/.streamlit/
 # =========================
 .DS_Store
 Thumbs.db
-.vscode/
+.vscode/src/data/*.csv
+src/data/*.bin
+src/data/*.idx
+src/data/bench/

@@ -12,6 +12,9 @@ if _project_root not in sys.path:
 from src.indices.base_index import BaseIndex
 from src.buffer_manager import BufferManager
 
+DATA_DIR = Path(__file__).resolve().parents[2] / "src" / "data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
 class ExtendibleHashing(BaseIndex):
     def __init__(self, table_name, index_name, key_type, key_size=30, page_size=4096,
                  filepath: str = None):
@@ -42,11 +45,8 @@ class ExtendibleHashing(BaseIndex):
 
         # 2. Archivos y Buffer
         if filepath is None:
-            # Backwards-compat: ubicación legacy si nadie inyecta el path.
-            if not os.path.exists("data"):
-                os.makedirs("data")
-            self.data_file = f"data/{index_name}.dat"
-            self.dir_file = f"data/{index_name}_dir.dat"
+            self.data_file = str(DATA_DIR / f"{index_name}.dat")
+            self.dir_file = str(DATA_DIR / f"{index_name}_dir.dat")
         else:
             parent = os.path.dirname(filepath)
             if parent:

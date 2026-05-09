@@ -13,6 +13,9 @@ if _project_root not in sys.path:
 from src.indices.base_index import BaseIndex
 from src.buffer_manager import BufferManager
 
+DATA_DIR = Path(__file__).resolve().parents[2] / "src" / "data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
 PAGE_SIZE = 4096
 HEADER_FMT = "<iiii"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
@@ -67,8 +70,7 @@ class RTreeNode:
 class RTree(BaseIndex):
     def __init__(self, table_name):
         super().__init__(table_name)
-        self.filename = f"src/data/{table_name}_rtree.idx"
-        os.makedirs(os.path.dirname(self.filename) or ".", exist_ok=True)
+        self.filename = str(DATA_DIR / f"{table_name}_rtree.idx")
         self.buffer = BufferManager(self.filename, PAGE_SIZE)
         
         self.root_id = 1

@@ -7,10 +7,13 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_BASE)
+_DATA_DIR = Path(__file__).resolve().parent / "data"
+os.makedirs(_DATA_DIR, exist_ok=True)
 for _p in (_PROJECT_ROOT, _BASE, os.path.join(_BASE, "indices")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -371,7 +374,7 @@ class Executor:
     def __init__(self, data_dir: str | None = None):
         self.catalog = Catalog()
         self._storage: dict[str, Any] = {}
-        self.data_dir = data_dir or os.path.join(_BASE, "data")
+        self.data_dir = str(Path(data_dir).resolve()) if data_dir else str(_DATA_DIR)
         os.makedirs(self.data_dir, exist_ok=True)
         self._lock = threading.Lock()
 
@@ -575,7 +578,7 @@ class Executor:
                 rtree_cols = meta.rtree_columns_for(c["nombre"])
                 if not rtree_cols or len(rtree_cols) != 2:
                     continue
-                rtree_path = os.path.join(_BASE, "data", f"{meta.name}_rtree.idx")
+                rtree_path = str(_DATA_DIR / f"{meta.name}_rtree.idx")
                 if os.path.exists(rtree_path):
                     os.remove(rtree_path)
                 rt = _RealRTree(meta.name)
@@ -864,12 +867,12 @@ class Executor:
             legacy_paths = []
             if info.tipo == "HASH":
                 legacy_paths += [
-                    os.path.join(_PROJECT_ROOT, "data", f"{idx_name}.dat"),
-                    os.path.join(_PROJECT_ROOT, "data", f"{idx_name}_dir.dat"),
+                    str(_DATA_DIR / f"{idx_name}.dat"),
+                    str(_DATA_DIR / f"{idx_name}_dir.dat"),
                 ]
             if info.tipo == "RTREE":
                 legacy_paths += [
-                    os.path.join(_BASE, "data", f"{meta.name}_rtree.idx"),
+                    str(_DATA_DIR / f"{meta.name}_rtree.idx"),
                 ]
             for p in legacy_paths:
                 if os.path.exists(p):

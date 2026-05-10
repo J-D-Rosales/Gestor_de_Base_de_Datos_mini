@@ -369,6 +369,11 @@ class _RealRTreeAdapter(_MetricsTracker):
         self._capture(self._rt.remove(key))
         return True
 
+    def dump_nodes(self):
+        if hasattr(self._rt, "dump_nodes"):
+            return self._rt.dump_nodes()
+        return []
+
 
 class Executor:
     def __init__(self, data_dir: str | None = None):
@@ -894,6 +899,16 @@ class Executor:
             "execution_time_ms": round((time.time() - t0) * 1000, 3),
             "indice_tipo": None,
         }
+
+    def get_rtree_nodes(self, table_name: str, col_name: str) -> dict | None:
+        meta = self.catalog.get(table_name)
+        if meta is None:
+            return None
+        info = meta.indices.get(col_name)
+        if info is None or info.tipo != "RTREE":
+            return None
+        nodes = info.instancia.dump_nodes() if hasattr(info.instancia, "dump_nodes") else []
+        return {"nodes": nodes, "rtree_cols": info.rtree_cols or []}
 
     def _view_indices(self, stmt):
         meta = self.catalog.get(stmt["tabla"])

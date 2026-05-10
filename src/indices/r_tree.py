@@ -402,5 +402,28 @@ class RTree(BaseIndex):
                         d = self._min_dist_mbr((cx, cy), e_mbr)
                         heapq.heappush(pq, (d, seq, "node", e["data1"]))
                         seq += 1
-                        
+
         return self._result(results, start)
+
+    def dump_nodes(self):
+        """BFS sobre el árbol devolviendo metadatos de cada nodo para visualización."""
+        result = []
+        visited = set()
+        queue = [(self.root_id, 0)]
+        while queue:
+            page_id, level = queue.pop(0)
+            if page_id in visited:
+                continue
+            visited.add(page_id)
+            node = self._read_node(page_id)
+            result.append({
+                "level": level,
+                "mbr": node.mbr(),
+                "is_leaf": node.is_leaf,
+                "n_entries": len(node.entries),
+                "page_id": page_id,
+            })
+            if not node.is_leaf:
+                for e in node.entries:
+                    queue.append((e["data1"], level + 1))
+        return result

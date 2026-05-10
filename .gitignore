@@ -35,3 +35,4 @@ Thumbs.db
 src/data/*.bin
 src/data/*.idx
 src/data/bench/
+informe.tex

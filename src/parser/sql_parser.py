@@ -53,6 +53,9 @@ class SQLParser:
     def execute_query(self, query):
         return self.execute(query)
 
+    def get_rtree_nodes(self, table_name: str, col_name: str) -> dict | None:
+        return self._executor.get_rtree_nodes(table_name, col_name)
+
     def run(self, query):
         """Parsea y ejecuta. Delega cada AST al Executor (catálogo + índices
         + sequential file). Devuelve una lista de resultados, uno por sentencia,

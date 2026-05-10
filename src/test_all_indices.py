@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-# --- CONFIGURACIÓN DINÁMICA DE RUTAS ---
+# CONFIGURACIÓN DINÁMICA DE RUTAS 
 _current_dir = Path(__file__).resolve().parent
 if str(_current_dir.parent) not in sys.path:
     sys.path.insert(0, str(_current_dir.parent))
@@ -102,7 +102,7 @@ def run_test():
             times[n]["R-Tree"]["KNN"] = "Error"
             reads[n]["R-Tree"]["KNN"] = "Error"
 
-# --- IMPRIMIR TABLAS ---
+# IMPRIMIR TABLAS
     def print_table(title, columns, op_key, data_dict):
         print(f"\n{'#'*85}\n{title}\n{'#'*85}")
         header = f"{'N Registros':<12} | " + " | ".join([f"{col:<15}" for col in columns])

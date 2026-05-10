@@ -154,7 +154,10 @@ class SequentialIndex(BaseIndex):
         coerced_target = self._coerce_key(key) if self.key_type == "STR" else int(key)
 
         n_main = self._file_count(self.main)
-        idx = self._binary_search(key, n_main)
+        base_idx = self._binary_search(key, n_main)
+
+        # Expansión hacia atrás
+        idx = base_idx
         while idx >= 0:
             entry = self._read_entry(self.main, idx)
             if entry is None:
@@ -167,7 +170,8 @@ class SequentialIndex(BaseIndex):
                 results.append((pid, sid))
             idx -= 1
 
-        idx = self._binary_search(key, n_main) + 1
+        # Expansión hacia adelante
+        idx = base_idx + 1
         while idx < n_main:
             entry = self._read_entry(self.main, idx)
             if entry is None:
@@ -207,7 +211,9 @@ class SequentialIndex(BaseIndex):
         results = []
 
         n_main = self._file_count(self.main)
-        for idx in range(n_main):
+        start_idx = max(0, self._binary_search(begin_key, n_main))
+
+        for idx in range(start_idx, n_main):
             entry = self._read_entry(self.main, idx)
             if entry is None:
                 continue
@@ -243,7 +249,10 @@ class SequentialIndex(BaseIndex):
         removed = 0
 
         n_main = self._file_count(self.main)
-        idx = self._binary_search(key, n_main)
+        base_idx = self._binary_search(key, n_main)
+        
+        # Expansión hacia atrás
+        idx = base_idx
         while idx >= 0:
             entry = self._read_entry(self.main, idx)
             if entry is None:
@@ -252,11 +261,30 @@ class SequentialIndex(BaseIndex):
             ekey_cmp = self._coerce_key(ekey) if self.key_type == "STR" else int(ekey)
             if ekey_cmp != coerced:
                 break
+            # Soft Delete
             if not deleted:
                 self._write_entry(self.main, idx, ekey, pid, sid, nxt, True)
                 removed += 1
             idx -= 1
 
+        # Expansión hacia adelante
+        idx = base_idx + 1
+        while idx < n_main:
+            entry = self._read_entry(self.main, idx)
+            if entry is None:
+                break
+            deleted, ekey, pid, sid, nxt = entry
+            ekey_cmp = self._coerce_key(ekey) if self.key_type == "STR" else int(ekey)
+            
+            if ekey_cmp != coerced:
+                break
+            # Soft Delete
+            if not deleted:
+                self._write_entry(self.main, idx, ekey, pid, sid, nxt, True)
+                removed += 1
+            idx += 1
+
+        # Escaneo secuencial en archivo auxiliar
         n_aux = self._file_count(self.aux)
         for i in range(n_aux):
             entry = self._read_entry(self.aux, i)
@@ -305,42 +333,79 @@ class SequentialIndex(BaseIndex):
         buf._fh = open(path, "r+b")
 
     def _rebuild(self):
-        all_entries = self._read_all_entries(self.main) + \
-                      self._read_all_entries(self.aux)
-        if self.key_type == "STR":
-            all_entries.sort(key=lambda e: self._coerce_key(e[0]))
-        else:
-            all_entries.sort(key=lambda e: int(e[0]))
 
-        self._truncate(self.main, self.main_path)
+        # Cargar y ordenar solo el archivo auxiliar en RAM
+        aux_entries = self._read_all_entries(self.aux)
+        if self.key_type == "STR":
+            aux_entries.sort(key=lambda e: self._coerce_key(e[0]))
+        else:
+            aux_entries.sort(key=lambda e: int(e[0]))
+
+        # Crear un BufferManager temporal para el nuevo archivo principal
+        temp_path = self.main_path + ".tmp"
+        temp_buf = BufferManager(temp_path, PAGE_SIZE)
         
-        # Bulk write: empaquetar todas las páginas en memoria y escribir en bloque
-        pages_to_write = {}
-        page_id = 0
-        slot = 0
-        
-        for key, pid, sid in all_entries:
-            if page_id not in pages_to_write:
-                pages_to_write[page_id] = bytearray(PAGE_SIZE)
-                struct.pack_into(HEADER_FORMAT, pages_to_write[page_id], 0, 0)
+        n_main = self._file_count(self.main)
+        main_idx = 0
+        aux_idx = 0
+        new_main_idx = 0
+
+        # Proceso de Fusión (Merge) entre el archivo principal y el auxiliar ordenado
+        while main_idx < n_main or aux_idx < len(aux_entries):
             
-            page = pages_to_write[page_id]
-            offset = HEADER_SIZE + slot * self.entry_size
-            page[offset:offset + self.entry_size] = self._pack_entry(key, pid, sid)
+            # Buscar el siguiente registro activo en el archivo principal
+            main_entry = None
+            while main_idx < n_main:
+                entry = self._read_entry(self.main, main_idx)
+                if entry and not entry[0]:  # Si existe y no está eliminado
+                    main_entry = entry
+                    break
+                main_idx += 1
+
+            # Comparar e insertar 
+            # Caso A: Se acabó el principal, vaciamos de golpe lo que queda del auxiliar
+            if main_entry is None:
+                while aux_idx < len(aux_entries):
+                    k, p, s = aux_entries[aux_idx]
+                    self._write_entry(temp_buf, new_main_idx, k, p, s)
+                    new_main_idx += 1
+                    aux_idx += 1
+                break
+
+            # Caso B: Se acabó el auxiliar, escribimos el principal actual y continuamos
+            if aux_idx >= len(aux_entries):
+                _, m_key, m_p, m_s, _ = main_entry
+                self._write_entry(temp_buf, new_main_idx, m_key, m_p, m_s)
+                new_main_idx += 1
+                main_idx += 1
+                continue
+
+            # Caso C: Ambos tienen datos, comparamos claves para ver quién "gana"
+            _, m_key, m_p, m_s, _ = main_entry
+            m_key_cmp = self._coerce_key(m_key) if self.key_type == "STR" else int(m_key)
+            a_key_cmp = self._coerce_key(aux_entries[aux_idx][0]) if self.key_type == "STR" else int(aux_entries[aux_idx][0])
+
+            if m_key_cmp <= a_key_cmp:
+                self._write_entry(temp_buf, new_main_idx, m_key, m_p, m_s)
+                main_idx += 1
+            else:
+                k, p, s = aux_entries[aux_idx]
+                self._write_entry(temp_buf, new_main_idx, k, p, s)
+                aux_idx += 1
             
-            # Actualizar count en la cabecera
-            count = struct.unpack_from(HEADER_FORMAT, page, 0)[0]
-            struct.pack_into(HEADER_FORMAT, page, 0, count + 1)
-            
-            slot += 1
-            if slot >= self.entries_per_page:
-                page_id += 1
-                slot = 0
+            new_main_idx += 1
+
+        # Guardar cambios y cerrar los BufferManagers
+        temp_buf.close()
+        self.main.close()
+
+        # Reemplazo a nivel de Sistema Operativo
+        os.replace(temp_path, self.main_path)
         
-        # Escribir todas las páginas compiladas de una sola vez
-        for pid in sorted(pages_to_write.keys()):
-            self.main.write_page(pid, bytes(pages_to_write[pid]))
+        # Reiniciar el main instanciando un nuevo BufferManager limpio
+        self.main = BufferManager(self.main_path, PAGE_SIZE)
         
+        # Vaciar el archivo auxiliar para el siguiente ciclo
         self._truncate(self.aux, self.aux_path)
 
     def flush(self):

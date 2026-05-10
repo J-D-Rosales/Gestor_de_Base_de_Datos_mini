@@ -22,9 +22,8 @@ from itertools import zip_longest
 from executor import Executor
 
 
-# ──────────────────────────────────────────────────────────────────────────
+
 # Modelo
-# ──────────────────────────────────────────────────────────────────────────
 @dataclass
 class Transaction:
     tx_id: str
@@ -35,7 +34,7 @@ class Transaction:
 class LogEntry:
     timestamp: float
     tx_id: str
-    event: str            # BEGIN | OP | COMMIT
+    event: str          
     detail: str = ""
 
     def render(self, t0: float) -> str:
@@ -43,9 +42,8 @@ class LogEntry:
         return f"[t+{rel:7.2f} ms] {self.tx_id:>3} {self.event:<6} {self.detail}"
 
 
-# ──────────────────────────────────────────────────────────────────────────
+
 # Manager
-# ──────────────────────────────────────────────────────────────────────────
 class TransactionManager:
     """
     Interleaving determinístico (round-robin) de N transacciones sobre un
@@ -56,7 +54,7 @@ class TransactionManager:
         self.executor = executor
         self.log: list[LogEntry] = []
 
-    # ---- API -----------------------------------------------------------
+    # API 
     def run(self, transactions: list[Transaction]) -> list[LogEntry]:
         self.log = []
         t0 = time.perf_counter()
@@ -78,7 +76,7 @@ class TransactionManager:
 
         return self.log
 
-    # ---- helpers -------------------------------------------------------
+    # helpers 
     def _exec_op(self, tx_id: str, op: dict):
         descripcion = self._describe(op)
         self._emit(tx_id, "OP", f"{descripcion}  ...")
@@ -128,7 +126,7 @@ class TransactionManager:
             return f"OK formato={result.get('formato')}"
         return "OK"
 
-    # ---- output --------------------------------------------------------
+    # output
     def print_log(self):
         if not self.log:
             print("(log vacío)")
@@ -142,9 +140,8 @@ class TransactionManager:
         print("-" * 78)
 
 
-# ──────────────────────────────────────────────────────────────────────────
+
 # Transacciones predefinidas para la prueba
-# ──────────────────────────────────────────────────────────────────────────
 def _setup_table(executor: Executor, tabla: str = "alumnos"):
     """Crea la tabla y carga unos pocos registros base antes del test."""
     executor.execute({

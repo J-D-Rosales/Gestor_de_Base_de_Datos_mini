@@ -74,11 +74,18 @@ streamlit run frontend/app.py
 ```
 Abre http://localhost:8501. En el sidebar elige tamaño de dataset, técnica de índice y columnas a indexar; luego escribe SQL en la consola.
 
-### 3. Alternativa: Docker
+### 3. Alternativa: Docker Compose
 ```bash
 docker compose up --build
 ```
 Expone el frontend en http://localhost:8501.
+
+### 4. Ejecución directa desde Docker Hub
+Sin necesidad de clonar el repositorio:
+```bash
+docker run -p 8501:8501 faridaquino/mini-sgbd:latest
+```
+Abre http://localhost:8501 en el navegador.
 
 ---
 
